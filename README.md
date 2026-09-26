@@ -1,5 +1,31 @@
 # Welcome to your Expo app 👋
 
+## Microservicio Node.js
+
+El proyecto incluye un microservicio en `server/` que consulta PokeAPI y entrega la respuesta al front mediante `GET /api/pokemon/:name`.
+
+1. Instala las dependencias del servicio:
+
+   ```bash
+   cd server
+   npm install
+   npm run dev
+   ```
+
+2. Configura la URL que usará Expo copiando `.env.example` como `.env`:
+
+   - Web o simulador iOS: `http://localhost:3000`
+   - Emulador Android: `http://10.0.2.2:3000`
+   - Teléfono físico: `http://IP_DE_TU_PC:3000` y conecta ambos dispositivos a la misma red.
+
+3. Reinicia Expo después de cambiar `EXPO_PUBLIC_API_URL`:
+
+   ```bash
+   npm start
+   ```
+
+Puedes comprobar el servicio con `http://localhost:3000/health` o `http://localhost:3000/api/pokemon/pikachu`.
+
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
 ## Get started
