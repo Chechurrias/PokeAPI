@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import {
   createContext,
   useCallback,
@@ -9,7 +10,15 @@ import {
   type PropsWithChildren,
 } from 'react';
 
-const RICK_AND_MORTY_API = 'https://rickandmortyapi.com/api/character/';
+const RICK_API_BASE_URL = (() => {
+  const configuredUrl = process.env.EXPO_PUBLIC_RICK_API_URL;
+  if (configuredUrl) return configuredUrl.replace(/\/$/, '');
+
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) return `http://${hostUri.split(':')[0]}:8000`;
+
+  return 'http://localhost:8000';
+})();
 
 type RickAndMortyCharacter = {
   id: number;
@@ -22,13 +31,8 @@ type RickAndMortyCharacter = {
   location: { name: string; url: string };
   image: string;
   episode: string[];
-};
-
-type RickAndMortyPage = {
-  info: {
-    next: string | null;
-  };
-  results: RickAndMortyCharacter[];
+  url?: string;
+  created?: string;
 };
 
 type RickContextValue = {
@@ -39,33 +43,19 @@ type RickContextValue = {
 };
 
 async function fetchCharacter(query: string, signal: AbortSignal) {
-  const isId = /^\d+$/.test(query);
-  const url = isId
-    ? `${RICK_AND_MORTY_API}${encodeURIComponent(query)}`
-    : `${RICK_AND_MORTY_API}?name=${encodeURIComponent(query)}`;
-  const response = await fetch(url, { signal });
-
-  if (!response.ok) {
-    throw new Error(response.status === 404
-      ? 'No se encontró ese personaje. Revisa el nombre o el ID.'
-      : 'No se pudo consultar la API. Inténtalo de nuevo.');
-  }
-
-  if (isId) return (await response.json()) as RickAndMortyCharacter;
-  return selectNameMatch((await response.json()) as RickAndMortyPage, query);
-}
-
-function selectNameMatch(page: RickAndMortyPage, query: string) {
-  const exactMatch = page.results.find(
-    (item) => item.name.toLowerCase() === query.toLowerCase()
+  const response = await fetch(
+    `${RICK_API_BASE_URL}/api/character/${encodeURIComponent(query)}`,
+    { signal }
   );
 
-  if (exactMatch) return exactMatch;
-  if (page.results.length === 1) return page.results[0];
-  if (page.results.length === 0) {
-    throw new Error('No se encontró ese personaje. Revisa el nombre o el ID.');
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(response.status === 404
+      ? 'No se encontró ese personaje. Revisa el nombre o el ID.'
+      : body?.detail ?? 'No se pudo consultar el catálogo. Inténtalo de nuevo.');
   }
-  throw new Error('Hay varias coincidencias. Escribe el nombre completo o usa el ID.');
+
+  return await response.json() as RickAndMortyCharacter;
 }
 
 const RickContext = createContext<RickContextValue | undefined>(undefined);

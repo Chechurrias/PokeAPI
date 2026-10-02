@@ -14,3 +14,18 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false
+  - type: web
+    name: rickandmorty-api
+    env: python
+    rootDir: server
+    buildCommand: pip install -r requirements-rick.txt
+    startCommand: python -m uvicorn serverRick:app --app-dir src --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: rickandmorty
+      - key: MONGODB_COLLECTION
+        value: characters
+      - key: ALLOWED_ORIGINS
+        sync: false
