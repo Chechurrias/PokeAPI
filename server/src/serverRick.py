@@ -105,3 +105,12 @@ def get_all_characters():
         return [serialize_character(character) for character in characters]
     except PyMongoError as error:
         raise HTTPException(status_code=503, detail="No se pudo consultar MongoDB Atlas.") from error
+
+
+@app.get("/")
+def root():
+    return {
+        "message": "Rick and Morty API Microservice running on Render",
+        "docs": "/docs",
+        "characters": "/api/characters"
+    }
