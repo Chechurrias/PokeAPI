@@ -1,13 +1,12 @@
-import { useSegments } from 'expo-router';
 import {
-    createContext,
-    useCallback,
-    useContext,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-    type PropsWithChildren,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PropsWithChildren,
 } from 'react';
 
 const RICK_AND_MORTY_API = 'https://rickandmortyapi.com/api/character/';
@@ -82,9 +81,6 @@ export function RickProvider({ children }: Readonly<PropsWithChildren>) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const controllerRef = useRef<AbortController | null>(null);
-  const segments = useSegments();
-  const activeRoute = segments.at(-1);
-  const isRickScreen = activeRoute === 'RickyMorty' || activeRoute === 'InfoRick';
 
   useEffect(() => () => controllerRef.current?.abort(), []);
 
@@ -124,10 +120,9 @@ export function RickProvider({ children }: Readonly<PropsWithChildren>) {
     () => ({ character, loading, error, searchCharacter }),
     [character, loading, error, searchCharacter]
   );
-  const screenValue = isRickScreen ? value : undefined;
 
   return (
-    <RickContext.Provider value={screenValue}>
+    <RickContext.Provider value={value}>
       {children}
     </RickContext.Provider>
   );
@@ -135,10 +130,6 @@ export function RickProvider({ children }: Readonly<PropsWithChildren>) {
 
 export function useRickContext() {
   const context = useContext(RickContext);
-  const segments = useSegments();
-  const activeRoute = segments.at(-1);
-  if (!context && (activeRoute === 'RickyMorty' || activeRoute === 'InfoRick')) {
-    throw new Error('useRickContext debe usarse dentro de RickProvider');
-  }
+
   return context ?? EMPTY_RICK_CONTEXT;
 }

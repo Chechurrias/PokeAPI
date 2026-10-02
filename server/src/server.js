@@ -1,6 +1,8 @@
 import cors from 'cors';
 import express from 'express';
 import pg from 'pg';
+import swaggerJsdoc from 'swagger-jsdoc';
+import swaggerUi from 'swagger-ui-express';
 
 const { Pool } = pg;
 const app = express();
@@ -38,6 +40,26 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Pokemon API Microservice',
+      version: '1.0.0',
+      description: 'Microservicio para consultar Pokémon almacenados en Supabase PostgreSQL.',
+    },
+    servers: [
+      {
+        url: 'http://localhost:3000',
+        description: 'Servidor local',
+      },
+    ],
+  },
+  apis: ['./src/server.js'],
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+
 app.disable('x-powered-by');
 app.use(cors({
   origin: (origin, callback) => {
@@ -51,6 +73,53 @@ app.use(cors({
 }));
 app.use(express.json());
 
+app.get('/', (_request, response) => {
+  response.type('html').send(`
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Pokemon API</title>
+        <style>
+          body { font-family: Arial, sans-serif; background: #111827; color: #f9fafb; display: grid; place-items: center; min-height: 100vh; margin: 0; }
+          .card { max-width: 620px; background: #1f2937; border-radius: 16px; padding: 32px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+          h1 { margin-top: 0; }
+          a { display: inline-block; margin-top: 12px; background: #2563eb; color: white; text-decoration: none; padding: 12px 18px; border-radius: 10px; }
+          .links { display: flex; gap: 12px; flex-wrap: wrap; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h1>Pokemon API Microservice</h1>
+          <p>Microservicio para consultar Pokémon desde Supabase.</p>
+          <div class="links">
+            <a href="/docs">Ver documentación Swagger</a>
+            <a href="/health">Health check</a>
+          </div>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     summary: Health check del microservicio
+ *     responses:
+ *       200:
+ *         description: Estado del servicio
+ *         content:
+ *           application/json:
+ *             example:
+ *               ok: true
+ *               service: pokemon-api
+ *               db: true
+ */
 app.get('/health', async (_request, response) => {
   try {
     const result = await pool.query('SELECT 1');
@@ -61,6 +130,42 @@ app.get('/health', async (_request, response) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/pokemon/{name}:
+ *   get:
+ *     summary: Consulta un Pokémon por nombre
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Nombre del Pokémon a buscar
+ *     responses:
+ *       200:
+ *         description: Pokémon encontrado
+ *         content:
+ *           application/json:
+ *             example:
+ *               id: 1
+ *               name: Bulbasaur
+ *               height: 0
+ *               weight: 0
+ *               types:
+ *                 - type:
+ *                     name: grass
+ *                 - type:
+ *                     name: poison
+ *               sprites:
+ *                 front_default: https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/1.png
+ *       404:
+ *         description: Pokémon no encontrado
+ *       400:
+ *         description: Nombre inválido
+ *       502:
+ *         description: Error al consultar la base de datos
+ */
 app.get('/api/pokemon/:name', async (request, response) => {
   const rawName = request.params.name?.trim();
   const normalizedName = rawName?.toLowerCase();
