@@ -30,15 +30,16 @@ Puedes comprobar el servicio con `http://localhost:3000/health` o `http://localh
 
 El servicio Python consulta la colección `characters` de la base `rickandmorty` en MongoDB Atlas. Configura `MONGODB_URI` en el entorno del servicio; no guardes la URI ni la contraseña en el repositorio. En Atlas, permite el acceso de red desde Render y concede al usuario de base de datos permisos de lectura sobre esa base.
 
-Para ejecutarlo localmente, instala sus dependencias y define `MONGODB_URI` en el entorno:
+Para ejecutarlo localmente, instala sus dependencias, crea `server/.env` desde la plantilla y reemplaza usuario y contraseña por los de MongoDB Atlas. Si la contraseña incluye caracteres especiales, codifícala para URL. No subas `server/.env` a Git.
 
 ```bash
 cd server
 pip install -r requirements-rick.txt
-python -m uvicorn serverRick:app --app-dir src --host 0.0.0.0 --port 8000
+Copy-Item .env.example .env
+python -m uvicorn serverRick:app --app-dir src --env-file .env --host 0.0.0.0 --port 8000
 ```
 
-El servicio queda en `http://localhost:8000`; comprueba `/health`, `/docs` o `/api/character/1`. La app Expo lee `EXPO_PUBLIC_RICK_API_URL` desde `.env`; para un teléfono físico usa `http://IP_DE_TU_PC:8000`. Reinicia Expo después de cambiar esta URL.
+El servicio queda en `http://localhost:8000`; primero comprueba `/health` y confirma que responda `"db": true`, después prueba `/api/character/1` o `/api/characters`. La app Expo lee `EXPO_PUBLIC_RICK_API_URL` desde el `.env` de la raíz; para un teléfono físico usa `http://IP_DE_TU_PC:8000`. Reinicia Expo después de cambiar esta URL.
 
 Render despliega el API Pokémon de Node y el API Rick y Morty de Python como servicios separados. Configura `MONGODB_URI` y `ALLOWED_ORIGINS` para el servicio `rickandmorty-api`, y define la URL pública de ese servicio como `EXPO_PUBLIC_RICK_API_URL` en el entorno de Expo.
 
