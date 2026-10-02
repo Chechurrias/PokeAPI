@@ -1,4 +1,3 @@
-import Constants from 'expo-constants';
 import {
   createContext,
   useCallback,
@@ -14,10 +13,8 @@ const RICK_API_BASE_URL = (() => {
   const configuredUrl = process.env.EXPO_PUBLIC_RICK_API_URL;
   if (configuredUrl) return configuredUrl.replace(/\/$/, '');
 
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) return `http://${hostUri.split(':')[0]}:8000`;
-
-  return 'http://localhost:8000';
+  // Apuntar directamente a la API desplegada en Render
+  return 'https://rickandmorty-api-python.onrender.com';
 })();
 
 type RickAndMortyCharacter = {
