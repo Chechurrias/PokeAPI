@@ -4,23 +4,11 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
 import { usePokemon, type Pokemon } from '@/context/PokemonContext';
-import Constants from 'expo-constants';
 import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput } from 'react-native';
 
-const API_BASE_URL = (() => {
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
-  }
-
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
-    return `http://${hostUri.split(':')[0]}:3000`;
-  }
-
-  return 'http://localhost:3000';
-})();
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
 
 export default function HomeScreen() {
   const [text, setText] = useState('');
@@ -35,6 +23,11 @@ export default function HomeScreen() {
 
     if (!nombre) {
       setError('Escribe el nombre de un Pokémon.');
+      return;
+    }
+
+    if (!API_BASE_URL) {
+      setError('Configura EXPO_PUBLIC_API_URL con la URL pública del microservicio en Render.');
       return;
     }
 

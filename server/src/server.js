@@ -1,4 +1,5 @@
 import cors from 'cors';
+import 'dotenv/config';
 import express from 'express';
 import pg from 'pg';
 import swaggerJsdoc from 'swagger-jsdoc';
@@ -7,6 +8,7 @@ import swaggerUi from 'swagger-ui-express';
 const { Pool } = pg;
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
+const serviceBaseUrl = process.env.RENDER_EXTERNAL_URL || '/';
 const databaseUrl = process.env.DATABASE_URL;
 
 if (!databaseUrl) {
@@ -50,8 +52,8 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: 'http://localhost:3000',
-        description: 'Servidor local',
+        url: serviceBaseUrl,
+        description: process.env.RENDER_EXTERNAL_URL ? 'Microservicio desplegado en Render' : 'Origen actual',
       },
     ],
   },
@@ -113,12 +115,8 @@ app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *     responses:
  *       200:
  *         description: Estado del servicio
- *         content:
- *           application/json:
- *             example:
- *               ok: true
- *               service: pokemon-api
- *               db: true
+ *       500:
+ *         description: Error en la base de datos
  */
 app.get('/health', async (_request, response) => {
   try {
@@ -126,7 +124,7 @@ app.get('/health', async (_request, response) => {
     return response.json({ ok: true, service: 'pokemon-api', db: result.rowCount > 0 });
   } catch (error) {
     console.error('Error en la base de datos:', error);
-    return response.status(500).json({ ok: false, service: 'pokemon-api', db: false });
+    return response.status(500).json({ ok: false, service: 'pokemon-api', db: false, error: error.message });
   }
 });
 
@@ -145,25 +143,11 @@ app.get('/health', async (_request, response) => {
  *     responses:
  *       200:
  *         description: Pokémon encontrado
- *         content:
- *           application/json:
- *             example:
- *               id: 1
- *               name: Bulbasaur
- *               height: 0
- *               weight: 0
- *               types:
- *                 - type:
- *                     name: grass
- *                 - type:
- *                     name: poison
- *               sprites:
- *                 front_default: https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/1.png
- *       404:
- *         description: Pokémon no encontrado
  *       400:
  *         description: Nombre inválido
- *       502:
+ *       404:
+ *         description: Pokémon no encontrado
+ *       500:
  *         description: Error al consultar la base de datos
  */
 app.get('/api/pokemon/:name', async (request, response) => {
@@ -175,15 +159,25 @@ app.get('/api/pokemon/:name', async (request, response) => {
   }
 
   try {
-    const result = await pool.query(
-      `
-        SELECT id, pokedex_id, name, type_primary, type_secondary, sprite_url
-        FROM pokemons
-        WHERE LOWER(name) = $1 OR LOWER(name) = $2
-        LIMIT 1;
-      `,
-      [normalizedName, normalizedName.replace(/-/g, ' ')]
-    );
+    let result;
+    const query = `
+      SELECT id, pokedex_id, name, type_primary, type_secondary, sprite_url
+      FROM %TABLE%
+      WHERE LOWER(name) = $1 OR LOWER(name) = $2
+      LIMIT 1;
+    `;
+    const params = [normalizedName, normalizedName.replaceAll('-', ' ')];
+
+    // Intenta buscar primero en 'pokemons' y si no existe prueba en 'pokemon'
+    try {
+      result = await pool.query(query.replace('%TABLE%', 'pokemons'), params);
+    } catch (err) {
+      if (err.code === '42P01') { // Causal: Relation does not exist
+        result = await pool.query(query.replace('%TABLE%', 'pokemon'), params);
+      } else {
+        throw err;
+      }
+    }
 
     if (result.rowCount === 0) {
       return response.status(404).json({ error: 'Pokémon no encontrado.' });
@@ -215,10 +209,17 @@ app.get('/api/pokemon/:name', async (request, response) => {
     });
   } catch (error) {
     console.error('Error consultando Supabase:', error);
-    return response.status(502).json({ error: 'No se pudo consultar la base de datos.' });
+    return response.status(500).json({
+      error: 'Error en el servidor al consultar la base de datos.',
+      details: error.message,
+    });
   }
 });
 
 app.listen(port, '0.0.0.0', () => {
-  console.log(`Pokemon API escuchando en http://localhost:${port}`);
+  console.log(
+    process.env.RENDER_EXTERNAL_URL
+      ? `Pokemon API disponible en ${process.env.RENDER_EXTERNAL_URL}`
+      : `Pokemon API escuchando en 0.0.0.0:${port}`
+  );
 });
