@@ -64,6 +64,7 @@ interface ProfesoresContextType {
 }
 
 const PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_PROFESORES_API_URL?.replace(/\/$/, '');
+const ADD_PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_ADD_PROFESORES_API_URL?.replace(/\/$/, '');
 
 function isProfesorId(value: unknown): value is Profesor['_id'] {
   return (
@@ -135,11 +136,11 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
   }, []);
 
   const addProfesor = useCallback(async (profesor: NuevoProfesor) => {
-    if (!PROFESORES_API_BASE_URL) {
-      throw new Error('Configura EXPO_PUBLIC_PROFESORES_API_URL con la URL pública del servicio de profesores.');
+    if (!ADD_PROFESORES_API_BASE_URL) {
+      throw new Error('Configura EXPO_PUBLIC_ADD_PROFESORES_API_URL con la URL pública del servicio de creación de profesores.');
     }
 
-    const response = await fetch(`${PROFESORES_API_BASE_URL}/api/profesores/datos`, {
+    const response = await fetch(`${ADD_PROFESORES_API_BASE_URL}/api/profesores`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(profesor),

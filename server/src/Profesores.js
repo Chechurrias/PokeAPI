@@ -4,7 +4,7 @@ import { createReadStream } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import swaggerUiDist from 'swagger-ui-dist';
-import { addProfesor, AddProfesorError } from './addProfes.js';
+import { Profesor } from './ProfesorModel.js';
 
 const allowedOrigins = new Set(
   (process.env.ALLOWED_ORIGINS ?? 'http://localhost:8081,http://localhost:19006')
@@ -17,50 +17,6 @@ const mongoUri = process.env.MONGODB_URI ?? process.env.MONGO_URI;
 if (!mongoUri) {
   throw new Error('MONGODB_URI no está configurada para el microservicio de profesores.');
 }
-
-const ExperienceSchema = new mongoose.Schema(
-  {
-    company: String,
-    role: String,
-    period: String,
-    description: String,
-  },
-  { _id: false }
-);
-
-const EducationSchema = new mongoose.Schema(
-  {
-    institution: String,
-    degree: String,
-    year: mongoose.Schema.Types.Mixed,
-  },
-  { _id: false }
-);
-
-const ContactSchema = new mongoose.Schema(
-  { linkedin: String, website: String },
-  { _id: false }
-);
-
-const ProfesorSchema = new mongoose.Schema(
-  {
-    id: Number,
-    name: String,
-    apellido: String,
-    headline: String,
-    Profesion: String,
-    image: String,
-    location: String,
-    about: String,
-    experience: [ExperienceSchema],
-    education: [EducationSchema],
-    skills: [String],
-    contact: ContactSchema,
-  },
-  { collection: 'datos' }
-);
-
-const Profesor = mongoose.model('Profesor', ProfesorSchema);
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
@@ -155,30 +111,6 @@ const openApiSpec = {
           500: { description: 'Error al consultar la base de datos' },
         },
       },
-      post: {
-        summary: 'Crea un profesor',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: { $ref: '#/components/schemas/NuevoProfesor' },
-            },
-          },
-        },
-        responses: {
-          201: {
-            description: 'Profesor creado',
-            content: {
-              'application/json': {
-                schema: { $ref: '#/components/schemas/Profesor' },
-              },
-            },
-          },
-          400: { description: 'Datos del profesor inválidos' },
-          409: { description: 'Ya existe un profesor con ese ID' },
-          500: { description: 'Error al crear el profesor' },
-        },
-      },
     },
   },
   components: {
@@ -236,20 +168,6 @@ const openApiSpec = {
           },
         },
       },
-      NuevoProfesor: {
-        type: 'object',
-        required: ['id', 'name', 'apellido', 'Profesion'],
-        properties: {
-          id: { type: 'integer', minimum: 1, example: 3 },
-          name: { type: 'string', example: 'Ana' },
-          apellido: { type: 'string', example: 'García' },
-          Profesion: { type: 'string', example: 'Docente de ciencias' },
-          headline: { type: 'string' },
-          image: { type: 'string', format: 'uri' },
-          location: { type: 'string' },
-          about: { type: 'string' },
-        },
-      },
       Error: {
         type: 'object',
         properties: { error: { type: 'string' } },
@@ -303,7 +221,7 @@ function applyCorsHeaders(request, response) {
 }
 
 function handleOptionsRequest(response) {
-  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   response.setHeader('Access-Control-Allow-Headers', 'Accept, Content-Type');
   response.writeHead(204);
   response.end();
@@ -361,64 +279,6 @@ async function handleProfessorSearch(url, response) {
   }
 }
 
-async function readJsonBody(request) {
-  const chunks = [];
-  let size = 0;
-  let exceedsMaxBodySize = false;
-  const maxBodySize = 64 * 1024;
-
-  for await (const chunk of request) {
-    size += chunk.length;
-    if (size > maxBodySize) {
-      exceedsMaxBodySize = true;
-      continue;
-    }
-    chunks.push(chunk);
-  }
-
-  if (exceedsMaxBodySize) {
-    const error = new Error('El cuerpo de la solicitud excede el tamaño permitido.');
-    error.statusCode = 413;
-    throw error;
-  }
-
-  if (chunks.length === 0) {
-    const error = new Error('El cuerpo de la solicitud es obligatorio.');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
-    const error = new Error('El cuerpo de la solicitud debe ser JSON válido.');
-    error.statusCode = 400;
-    throw error;
-  }
-}
-
-async function handleAddProfesor(request, response) {
-  if (!request.headers['content-type']?.includes('application/json')) {
-    return sendJson(response, 415, { error: 'El Content-Type debe ser application/json.' });
-  }
-
-  try {
-    const payload = await readJsonBody(request);
-    const profesor = await addProfesor(Profesor, payload);
-    return sendJson(response, 201, profesor);
-  } catch (error) {
-    if (error instanceof AddProfesorError) {
-      return sendJson(response, error.statusCode, { error: error.message });
-    }
-    if (error.statusCode === 400 || error.statusCode === 413) {
-      return sendJson(response, error.statusCode, { error: error.message });
-    }
-
-    console.error('Error al crear profesor:', error.message);
-    return sendJson(response, 500, { error: 'Error interno al crear el profesor.' });
-  }
-}
-
 async function routeGetRequest(url, response) {
   if (url.pathname === '/docs' || url.pathname === '/docs/') return serveSwaggerPage(response);
   if (url.pathname === '/openapi.json') return sendJson(response, 200, openApiSpec);
@@ -437,11 +297,8 @@ async function handleRequest(request, response) {
   const url = parseRequestUrl(request, response);
   if (!url) return;
   if (request.method === 'GET') return routeGetRequest(url, response);
-  if (request.method === 'POST' && url.pathname === '/api/profesores/datos') {
-    return handleAddProfesor(request, response);
-  }
 
-  response.setHeader('Allow', 'GET, POST, OPTIONS');
+  response.setHeader('Allow', 'GET, OPTIONS');
   return sendJson(response, 405, { error: 'Método no permitido.' });
 }
 

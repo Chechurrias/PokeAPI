@@ -7,7 +7,8 @@
     "dev": "node --watch src/Profesores.js",
     "start": "node src/Profesores.js",
     "start:pokemon": "node src/server.js",
-    "start:profesores": "node src/Profesores.js"
+    "start:profesores": "node src/Profesores.js",
+    "start:add-profesores": "node src/addProfes.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
