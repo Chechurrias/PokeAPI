@@ -1,6 +1,10 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
+import { createReadStream } from 'node:fs';
 import { createServer } from 'node:http';
+import { join } from 'node:path';
+import swaggerUiDist from 'swagger-ui-dist';
+import { addProfesor, AddProfesorError } from './addProfes.js';
 
 const allowedOrigins = new Set(
   (process.env.ALLOWED_ORIGINS ?? 'http://localhost:8081,http://localhost:19006')
@@ -91,47 +95,258 @@ function createSearchFilter(search) {
   };
 }
 
-const server = createServer(async (request, response) => {
+const openApiSpec = {
+  openapi: '3.0.3',
+  info: {
+    title: 'Microservicio de Profesores',
+    version: '1.0.0',
+    description: 'Consulta y crea perfiles de profesores almacenados en MongoDB Atlas.',
+  },
+  servers: [{ url: '/' }],
+  paths: {
+    '/health': {
+      get: {
+        summary: 'Verifica el servicio y la conexión con MongoDB',
+        responses: {
+          200: {
+            description: 'Servicio y base de datos disponibles',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Health' },
+              },
+            },
+          },
+          503: { description: 'MongoDB no está disponible' },
+        },
+      },
+    },
+    '/api/profesores/datos': {
+      get: {
+        summary: 'Busca profesores por ID o texto del perfil',
+        description: 'Busca en nombre, apellido, titular, profesión, ubicación, experiencia, educación y habilidades.',
+        parameters: [
+          {
+            name: 'search',
+            in: 'query',
+            required: true,
+            description: 'ID numérico o término de búsqueda',
+            schema: { type: 'string', minLength: 1 },
+            example: 'Omar',
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Perfiles encontrados',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: { $ref: '#/components/schemas/Profesor' },
+                },
+              },
+            },
+          },
+          400: {
+            description: 'Falta el parámetro search',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+            },
+          },
+          500: { description: 'Error al consultar la base de datos' },
+        },
+      },
+      post: {
+        summary: 'Crea un profesor',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/NuevoProfesor' },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'Profesor creado',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Profesor' },
+              },
+            },
+          },
+          400: { description: 'Datos del profesor inválidos' },
+          409: { description: 'Ya existe un profesor con ese ID' },
+          500: { description: 'Error al crear el profesor' },
+        },
+      },
+    },
+  },
+  components: {
+    schemas: {
+      Health: {
+        type: 'object',
+        properties: {
+          ok: { type: 'boolean' },
+          service: { type: 'string' },
+          db: { type: 'boolean' },
+        },
+      },
+      Profesor: {
+        type: 'object',
+        properties: {
+          _id: { type: 'string', example: '6ac15a1068d39d243fc568ca' },
+          id: { type: 'integer', example: 2 },
+          name: { type: 'string', example: 'Omar' },
+          apellido: { type: 'string', example: 'Bonilla' },
+          headline: { type: 'string' },
+          Profesion: { type: 'string' },
+          image: { type: 'string', format: 'uri' },
+          location: { type: 'string', example: 'Bogotá, Colombia' },
+          about: { type: 'string' },
+          experience: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                company: { type: 'string' },
+                role: { type: 'string' },
+                period: { type: 'string' },
+                description: { type: 'string' },
+              },
+            },
+          },
+          education: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                institution: { type: 'string' },
+                degree: { type: 'string' },
+                year: { oneOf: [{ type: 'string' }, { type: 'integer' }] },
+              },
+            },
+          },
+          skills: { type: 'array', items: { type: 'string' } },
+          contact: {
+            type: 'object',
+            properties: {
+              linkedin: { type: 'string', format: 'uri' },
+              website: { type: 'string', format: 'uri' },
+            },
+          },
+        },
+      },
+      NuevoProfesor: {
+        type: 'object',
+        required: ['id', 'name', 'apellido', 'Profesion'],
+        properties: {
+          id: { type: 'integer', minimum: 1, example: 3 },
+          name: { type: 'string', example: 'Ana' },
+          apellido: { type: 'string', example: 'García' },
+          Profesion: { type: 'string', example: 'Docente de ciencias' },
+          headline: { type: 'string' },
+          image: { type: 'string', format: 'uri' },
+          location: { type: 'string' },
+          about: { type: 'string' },
+        },
+      },
+      Error: {
+        type: 'object',
+        properties: { error: { type: 'string' } },
+      },
+    },
+  },
+};
+
+const swaggerAssets = new Map([
+  ['swagger-ui.css', ['swagger-ui.css', 'text/css; charset=utf-8']],
+  ['swagger-ui-bundle.js', ['swagger-ui-bundle.js', 'text/javascript; charset=utf-8']],
+  ['swagger-ui-standalone-preset.js', ['swagger-ui-standalone-preset.js', 'text/javascript; charset=utf-8']],
+  ['favicon-32x32.png', ['favicon-32x32.png', 'image/png']],
+  ['favicon-16x16.png', ['favicon-16x16.png', 'image/png']],
+]);
+
+const swaggerHtml = `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API Profesores - Swagger</title>
+    <link rel="stylesheet" href="/docs/swagger-ui.css" />
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="/docs/swagger-ui-bundle.js"></script>
+    <script src="/docs/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = () => SwaggerUIBundle({
+        url: '/openapi.json',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: 'StandaloneLayout'
+      });
+    </script>
+  </body>
+</html>`;
+
+function applyCorsHeaders(request, response) {
   const origin = request.headers.origin;
   if (origin && !allowedOrigins.has(origin)) {
-    return sendJson(response, 403, { error: 'Origen no permitido.' });
+    sendJson(response, 403, { error: 'Origen no permitido.' });
+    return false;
   }
 
   response.setHeader('Vary', 'Origin');
   if (origin) response.setHeader('Access-Control-Allow-Origin', origin);
+  return true;
+}
 
-  if (request.method === 'OPTIONS') {
-    response.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    response.setHeader('Access-Control-Allow-Headers', 'Accept, Content-Type');
-    response.writeHead(204);
-    return response.end();
-  }
+function handleOptionsRequest(response) {
+  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Accept, Content-Type');
+  response.writeHead(204);
+  response.end();
+}
 
-  if (request.method !== 'GET') {
-    response.setHeader('Allow', 'GET, OPTIONS');
-    return sendJson(response, 405, { error: 'Método no permitido. Usa GET y query params.' });
-  }
-
-  let url;
+function parseRequestUrl(request, response) {
   try {
-    url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
+    return new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
   } catch {
-    return sendJson(response, 400, { error: 'URL de solicitud no válida.' });
+    sendJson(response, 400, { error: 'URL de solicitud no válida.' });
+    return null;
   }
+}
 
-  if (url.pathname === '/health') {
-    try {
-      await mongoose.connection.db.admin().ping();
-      return sendJson(response, 200, { ok: true, service: 'profesores-api', db: true });
-    } catch {
-      return sendJson(response, 503, { ok: false, service: 'profesores-api', db: false });
-    }
+function serveSwaggerPage(response) {
+  response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  response.end(swaggerHtml);
+}
+
+function serveSwaggerAsset(assetName, response) {
+  const asset = swaggerAssets.get(assetName);
+  if (!asset) return sendJson(response, 404, { error: 'Recurso de documentación no encontrado.' });
+
+  const [fileName, contentType] = asset;
+  response.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=3600' });
+  const stream = createReadStream(join(swaggerUiDist.getAbsoluteFSPath(), fileName));
+  stream.on('error', () => {
+    if (response.headersSent) return response.destroy();
+    return sendJson(response, 404, { error: 'Recurso de documentación no encontrado.' });
+  });
+  return stream.pipe(response);
+}
+
+async function handleHealthRequest(response) {
+  try {
+    await mongoose.connection.db.admin().ping();
+    return sendJson(response, 200, { ok: true, service: 'profesores-api', db: true });
+  } catch {
+    return sendJson(response, 503, { ok: false, service: 'profesores-api', db: false });
   }
+}
 
-  if (url.pathname !== '/api/profesores/datos') {
-    return sendJson(response, 404, { error: 'Ruta no encontrada.' });
-  }
-
+async function handleProfessorSearch(url, response) {
   const search = (url.searchParams.get('search') ?? '').trim();
   if (!search) {
     return sendJson(response, 400, { error: 'El parámetro de consulta search es obligatorio.' });
@@ -144,6 +359,94 @@ const server = createServer(async (request, response) => {
     console.error('Error al consultar profesores:', error.message);
     return sendJson(response, 500, { error: 'Error interno al consultar la base de datos.' });
   }
+}
+
+async function readJsonBody(request) {
+  const chunks = [];
+  let size = 0;
+  let exceedsMaxBodySize = false;
+  const maxBodySize = 64 * 1024;
+
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > maxBodySize) {
+      exceedsMaxBodySize = true;
+      continue;
+    }
+    chunks.push(chunk);
+  }
+
+  if (exceedsMaxBodySize) {
+    const error = new Error('El cuerpo de la solicitud excede el tamaño permitido.');
+    error.statusCode = 413;
+    throw error;
+  }
+
+  if (chunks.length === 0) {
+    const error = new Error('El cuerpo de la solicitud es obligatorio.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    const error = new Error('El cuerpo de la solicitud debe ser JSON válido.');
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+async function handleAddProfesor(request, response) {
+  if (!request.headers['content-type']?.includes('application/json')) {
+    return sendJson(response, 415, { error: 'El Content-Type debe ser application/json.' });
+  }
+
+  try {
+    const payload = await readJsonBody(request);
+    const profesor = await addProfesor(Profesor, payload);
+    return sendJson(response, 201, profesor);
+  } catch (error) {
+    if (error instanceof AddProfesorError) {
+      return sendJson(response, error.statusCode, { error: error.message });
+    }
+    if (error.statusCode === 400 || error.statusCode === 413) {
+      return sendJson(response, error.statusCode, { error: error.message });
+    }
+
+    console.error('Error al crear profesor:', error.message);
+    return sendJson(response, 500, { error: 'Error interno al crear el profesor.' });
+  }
+}
+
+async function routeGetRequest(url, response) {
+  if (url.pathname === '/docs' || url.pathname === '/docs/') return serveSwaggerPage(response);
+  if (url.pathname === '/openapi.json') return sendJson(response, 200, openApiSpec);
+  if (url.pathname.startsWith('/docs/')) {
+    return serveSwaggerAsset(url.pathname.slice('/docs/'.length), response);
+  }
+  if (url.pathname === '/health') return handleHealthRequest(response);
+  if (url.pathname === '/api/profesores/datos') return handleProfessorSearch(url, response);
+  return sendJson(response, 404, { error: 'Ruta no encontrada.' });
+}
+
+async function handleRequest(request, response) {
+  if (!applyCorsHeaders(request, response)) return;
+  if (request.method === 'OPTIONS') return handleOptionsRequest(response);
+
+  const url = parseRequestUrl(request, response);
+  if (!url) return;
+  if (request.method === 'GET') return routeGetRequest(url, response);
+  if (request.method === 'POST' && url.pathname === '/api/profesores/datos') {
+    return handleAddProfesor(request, response);
+  }
+
+  response.setHeader('Allow', 'GET, POST, OPTIONS');
+  return sendJson(response, 405, { error: 'Método no permitido.' });
+}
+
+const server = createServer((request, response) => {
+  void handleRequest(request, response);
 });
 
 await mongoose.connect(mongoUri, {

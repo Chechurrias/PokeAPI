@@ -1,18 +1,44 @@
-import { useProfesores, type Profesor } from '@/context/ProfesoresContext';
+import { useProfesores, type NuevoProfesor, type Profesor } from '@/context/ProfesoresContext';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
     Alert,
     FlatList,
+    KeyboardAvoidingView,
     Linking,
+    Modal,
+    Platform,
     RefreshControl,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
+
+type ProfesorForm = {
+  id: string;
+  name: string;
+  apellido: string;
+  Profesion: string;
+  headline: string;
+  location: string;
+  image: string;
+  about: string;
+};
+
+const emptyProfesorForm: ProfesorForm = {
+  id: '',
+  name: '',
+  apellido: '',
+  Profesion: '',
+  headline: '',
+  location: '',
+  image: '',
+  about: '',
+};
 
 function openExternalUrl(url: string) {
   if (!/^https?:\/\//i.test(url)) return;
@@ -30,11 +56,59 @@ export default function Profes() {
   const [search, setSearch] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [expandedProfesorId, setExpandedProfesorId] = useState<string | null>(null);
-  const { profesores, loading, error, fetchProfesores } = useProfesores();
+  const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [profesorForm, setProfesorForm] = useState<ProfesorForm>(emptyProfesorForm);
+  const { profesores, loading, error, fetchProfesores, addProfesor } = useProfesores();
 
   const submitSearch = () => {
     setHasSearched(true);
     void fetchProfesores(search);
+  };
+
+  const updateProfesorForm = (field: keyof ProfesorForm, value: string) => {
+    setProfesorForm((currentForm) => ({ ...currentForm, [field]: value }));
+  };
+
+  const submitNewProfesor = async () => {
+    const id = Number(profesorForm.id.trim());
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      Alert.alert('ID no válido', 'Ingresa un ID numérico entero y positivo.');
+      return;
+    }
+
+    if (!profesorForm.name.trim() || !profesorForm.apellido.trim() || !profesorForm.Profesion.trim()) {
+      Alert.alert('Faltan datos', 'Nombre, apellido y profesión son obligatorios.');
+      return;
+    }
+
+    const newProfesor: NuevoProfesor = {
+      id,
+      name: profesorForm.name.trim(),
+      apellido: profesorForm.apellido.trim(),
+      Profesion: profesorForm.Profesion.trim(),
+      ...(profesorForm.headline.trim() ? { headline: profesorForm.headline.trim() } : {}),
+      ...(profesorForm.location.trim() ? { location: profesorForm.location.trim() } : {}),
+      ...(profesorForm.image.trim() ? { image: profesorForm.image.trim() } : {}),
+      ...(profesorForm.about.trim() ? { about: profesorForm.about.trim() } : {}),
+    };
+
+    setIsCreating(true);
+    try {
+      await addProfesor(newProfesor);
+      setProfesorForm(emptyProfesorForm);
+      setIsCreateModalVisible(false);
+      setSearch('');
+      setHasSearched(true);
+      setExpandedProfesorId(null);
+      Alert.alert('Profesor creado', 'El profesor se agregó correctamente.');
+    } catch (creationError) {
+      const message =
+        creationError instanceof Error ? creationError.message : 'Ocurrió un error al crear el profesor.';
+      Alert.alert('No se pudo crear el profesor', message);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const renderProfesorItem = ({ item }: { item: Profesor }) => {
@@ -173,6 +247,16 @@ export default function Profes() {
           <Text style={styles.homeButtonText}>Inicio</Text>
         </TouchableOpacity>
       </View>
+      <View style={styles.createActionRow}>
+        <TouchableOpacity
+          onPress={() => setIsCreateModalVisible(true)}
+          style={styles.createButton}
+          accessibilityRole="button"
+          accessibilityLabel="Crear profesor"
+        >
+          <Text style={styles.createButtonText}>+ Crear profesor</Text>
+        </TouchableOpacity>
+      </View>
       <View style={styles.searchRow}>
         <TextInput
           value={search}
@@ -209,6 +293,124 @@ export default function Profes() {
           </Text>
         }
       />
+
+      <Modal
+        visible={isCreateModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setIsCreateModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Crear profesor</Text>
+              <TouchableOpacity
+                onPress={() => setIsCreateModalVisible(false)}
+                style={styles.modalCloseButton}
+                accessibilityRole="button"
+                accessibilityLabel="Cerrar formulario"
+              >
+                <Text style={styles.modalCloseText}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.formContent}
+            >
+              <Text style={styles.fieldLabel}>ID *</Text>
+              <TextInput
+                value={profesorForm.id}
+                onChangeText={(value) => updateProfesorForm('id', value)}
+                placeholder="Ej. 3"
+                keyboardType="number-pad"
+                style={styles.formInput}
+                accessibilityLabel="ID del profesor"
+              />
+
+              <Text style={styles.fieldLabel}>Nombre *</Text>
+              <TextInput
+                value={profesorForm.name}
+                onChangeText={(value) => updateProfesorForm('name', value)}
+                placeholder="Nombre"
+                style={styles.formInput}
+                accessibilityLabel="Nombre del profesor"
+              />
+
+              <Text style={styles.fieldLabel}>Apellido *</Text>
+              <TextInput
+                value={profesorForm.apellido}
+                onChangeText={(value) => updateProfesorForm('apellido', value)}
+                placeholder="Apellido"
+                style={styles.formInput}
+                accessibilityLabel="Apellido del profesor"
+              />
+
+              <Text style={styles.fieldLabel}>Profesión *</Text>
+              <TextInput
+                value={profesorForm.Profesion}
+                onChangeText={(value) => updateProfesorForm('Profesion', value)}
+                placeholder="Profesión"
+                style={styles.formInput}
+                accessibilityLabel="Profesión del profesor"
+              />
+
+              <Text style={styles.fieldLabel}>Titular</Text>
+              <TextInput
+                value={profesorForm.headline}
+                onChangeText={(value) => updateProfesorForm('headline', value)}
+                placeholder="Ej. Docente de matemáticas"
+                style={styles.formInput}
+                accessibilityLabel="Titular del perfil"
+              />
+
+              <Text style={styles.fieldLabel}>Ubicación</Text>
+              <TextInput
+                value={profesorForm.location}
+                onChangeText={(value) => updateProfesorForm('location', value)}
+                placeholder="Ciudad, país"
+                style={styles.formInput}
+                accessibilityLabel="Ubicación del profesor"
+              />
+
+              <Text style={styles.fieldLabel}>URL de imagen</Text>
+              <TextInput
+                value={profesorForm.image}
+                onChangeText={(value) => updateProfesorForm('image', value)}
+                placeholder="https://..."
+                keyboardType="url"
+                autoCapitalize="none"
+                style={styles.formInput}
+                accessibilityLabel="URL de imagen del profesor"
+              />
+
+              <Text style={styles.fieldLabel}>Acerca de</Text>
+              <TextInput
+                value={profesorForm.about}
+                onChangeText={(value) => updateProfesorForm('about', value)}
+                placeholder="Descripción del profesor"
+                multiline
+                textAlignVertical="top"
+                style={[styles.formInput, styles.formInputMultiline]}
+                accessibilityLabel="Descripción del profesor"
+              />
+
+              <TouchableOpacity
+                onPress={() => void submitNewProfesor()}
+                disabled={isCreating}
+                style={[styles.submitButton, isCreating && styles.searchButtonDisabled]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.submitButtonText}>
+                  {isCreating ? 'Creando...' : 'Guardar profesor'}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -238,6 +440,19 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 12,
   },
+  createActionRow: {
+    alignItems: 'flex-end',
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  createButton: {
+    minHeight: 40,
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#0066cc',
+    paddingHorizontal: 14,
+  },
+  createButtonText: { color: '#fff', fontWeight: '600' },
   homeButton: {
     minHeight: 40,
     justifyContent: 'center',
@@ -283,6 +498,56 @@ const styles = StyleSheet.create({
   },
   searchButtonDisabled: { opacity: 0.6 },
   searchButtonText: { color: '#fff', fontWeight: '600' },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    padding: 16,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 460,
+    maxHeight: '90%',
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 18,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#1a1a1a' },
+  modalCloseButton: { paddingHorizontal: 8, paddingVertical: 6 },
+  modalCloseText: { color: '#075eaa', fontWeight: '600' },
+  formContent: { paddingBottom: 8 },
+  fieldLabel: {
+    color: '#26384a',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  formInput: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: '#bdc7d1',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+  },
+  formInputMultiline: { minHeight: 88, paddingTop: 10 },
+  submitButton: {
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#0066cc',
+    marginTop: 20,
+  },
+  submitButtonText: { color: '#fff', fontWeight: '700' },
   listContent: {
     paddingHorizontal: 16,
     paddingBottom: 24,
