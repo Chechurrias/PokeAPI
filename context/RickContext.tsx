@@ -15,7 +15,7 @@ const RICK_API_BASE_URL = (() => {
 
   // Apuntar directamente a la API desplegada en Render
   return 'https://rickandmorty-api-python.onrender.com';
-})();
+})();;
 
 type RickAndMortyCharacter = {
   id: number;
