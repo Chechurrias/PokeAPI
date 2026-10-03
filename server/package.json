@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node --watch src/server.js",
-    "start": "node src/server.js",
+    "dev": "node --watch src/Profesores.js",
+    "start": "node src/Profesores.js",
+    "start:pokemon": "node src/server.js",
     "start:profesores": "node src/Profesores.js"
   },
   "dependencies": {
@@ -14,7 +15,6 @@
     "express": "^5.1.0",
     "mongoose": "^8.3.0",
     "pg": "^8.23.1",
-    "pokeapi54": "file:..",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1"
   }

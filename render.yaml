@@ -4,7 +4,7 @@ services:
     env: node
     rootDir: server
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: npm run start:pokemon
     envVars:
       - key: NODE_ENV
         value: production
