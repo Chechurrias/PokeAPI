@@ -7,10 +7,22 @@ import {
     type PropsWithChildren,
 } from 'react';
 
-// Tipado del documento MongoDB
-export interface MongoLocation {
-  name: string;
-  url: string;
+export interface ProfesorExperience {
+  company: string;
+  role: string;
+  period: string;
+  description: string;
+}
+
+export interface ProfesorEducation {
+  institution: string;
+  degree: string;
+  year: string | number;
+}
+
+export interface ProfesorContact {
+  linkedin?: string;
+  website?: string;
 }
 
 export interface Profesor {
@@ -21,7 +33,14 @@ export interface Profesor {
   name: string;
   apellido: string;
   Profesion: string;
-  location?: MongoLocation;
+  headline?: string;
+  image?: string | null;
+  location?: string;
+  about?: string;
+  experience?: ProfesorExperience[];
+  education?: ProfesorEducation[];
+  skills?: string[];
+  contact?: ProfesorContact;
 }
 
 interface ProfesoresContextType {
