@@ -41,9 +41,9 @@ python -m uvicorn serverRick:app --app-dir src --env-file .env --host 0.0.0.0 --
 
 El servicio queda en `http://localhost:8000`; primero comprueba `/health` y confirma que responda `"db": true`, después prueba `/api/character/1` o `/api/characters`. La app Expo lee `EXPO_PUBLIC_RICK_API_URL` desde el `.env` de la raíz; para un teléfono físico usa `http://IP_DE_TU_PC:8000`. Reinicia Expo después de cambiar esta URL.
 
-Render despliega las APIs de Pokémon, Rick y Morty, consulta de profesores y creación de profesores como servicios independientes. Para los dos servicios de profesores configura `MONGODB_URI`, `PROFESORES_MONGODB_DATABASE=Profesores` y `ALLOWED_ORIGINS`. El servicio `profesores-api` consulta perfiles; `add-profesores-api` crea perfiles mediante `POST /api/profesores` y verifica disponibilidad en `/health`.
+Render despliega las APIs de Pokémon, Rick y Morty, consulta de profesores, creación de profesores y modificación de profesores como servicios independientes. Para cada servicio de profesores configura `MONGODB_URI`, `PROFESORES_MONGODB_DATABASE=Profesores` y `ALLOWED_ORIGINS`. El servicio `profesores-api` consulta perfiles; `add-profesores-api` crea perfiles mediante `POST /api/profesores`; `mod-profesores-api` modifica perfiles mediante `PATCH /api/profesores/:id`. Ambos microservicios de escritura verifican disponibilidad en `/health`.
 
-En el entorno de Expo configura `EXPO_PUBLIC_PROFESORES_API_URL` con la URL pública de `profesores-api` y `EXPO_PUBLIC_ADD_PROFESORES_API_URL` con la URL pública de `add-profesores-api`, ambas sin barra final. Reinicia o vuelve a compilar Expo después de cambiar esas variables.
+En el entorno de Expo configura `EXPO_PUBLIC_PROFESORES_API_URL` con la URL pública de `profesores-api`, `EXPO_PUBLIC_ADD_PROFESORES_API_URL` con la URL pública de `add-profesores-api` y `EXPO_PUBLIC_MOD_PROFESORES_API_URL` con la URL pública de `mod-profesores-api`, todas sin barra final. Reinicia o vuelve a compilar Expo después de cambiar esas variables.
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 

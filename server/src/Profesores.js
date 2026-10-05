@@ -78,15 +78,15 @@ const openApiSpec = {
     },
     '/api/profesores/datos': {
       get: {
-        summary: 'Busca profesores por ID o texto del perfil',
-        description: 'Busca en nombre, apellido, titular, profesión, ubicación, experiencia, educación y habilidades.',
+        summary: 'Lista todos los profesores o busca por ID/texto del perfil',
+        description: 'Sin search (o con search vacío) devuelve todos los profesores. Busca en nombre, apellido, titular, profesión, ubicación, experiencia, educación y habilidades.',
         parameters: [
           {
             name: 'search',
             in: 'query',
-            required: true,
-            description: 'ID numérico o término de búsqueda',
-            schema: { type: 'string', minLength: 1 },
+            required: false,
+            description: 'Opcional: ID numérico o término de búsqueda. Si se omite o está vacío, devuelve todos los profesores.',
+            schema: { type: 'string' },
             example: 'Omar',
           },
         ],
@@ -100,12 +100,6 @@ const openApiSpec = {
                   items: { $ref: '#/components/schemas/Profesor' },
                 },
               },
-            },
-          },
-          400: {
-            description: 'Falta el parámetro search',
-            content: {
-              'application/json': { schema: { $ref: '#/components/schemas/Error' } },
             },
           },
           500: { description: 'Error al consultar la base de datos' },
@@ -266,12 +260,11 @@ async function handleHealthRequest(response) {
 
 async function handleProfessorSearch(url, response) {
   const search = (url.searchParams.get('search') ?? '').trim();
-  if (!search) {
-    return sendJson(response, 400, { error: 'El parámetro de consulta search es obligatorio.' });
-  }
 
   try {
-    const profesores = await Profesor.find(createSearchFilter(search)).limit(50).lean();
+    const query = search ? createSearchFilter(search) : {};
+    const profesoresQuery = Profesor.find(query).sort({ id: 1 });
+    const profesores = await (search ? profesoresQuery.limit(50) : profesoresQuery).lean();
     return sendJson(response, 200, profesores);
   } catch (error) {
     console.error('Error al consultar profesores:', error.message);

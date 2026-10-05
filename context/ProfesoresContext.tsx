@@ -54,17 +54,29 @@ export interface NuevoProfesor {
   about?: string;
 }
 
+export interface DatosProfesorEditables {
+  name: string;
+  apellido: string;
+  Profesion: string;
+  headline: string;
+  image: string;
+  location: string;
+  about: string;
+}
+
 interface ProfesoresContextType {
   profesores: Profesor[];
   loading: boolean;
   error: string | null;
   fetchProfesores: (search: string) => Promise<void>;
   addProfesor: (profesor: NuevoProfesor) => Promise<Profesor>;
+  updateProfesor: (id: number, datos: DatosProfesorEditables) => Promise<Profesor>;
   getProfesorById: (id: number) => Profesor | undefined;
 }
 
 const PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_PROFESORES_API_URL?.replace(/\/$/, '');
 const ADD_PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_ADD_PROFESORES_API_URL?.replace(/\/$/, '');
+const MOD_PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_MOD_PROFESORES_API_URL?.replace(/\/$/, '');
 
 function isProfesorId(value: unknown): value is Profesor['_id'] {
   return (
@@ -101,12 +113,6 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
 
   const fetchProfesores = useCallback(async (search: string) => {
     const normalizedSearch = search.trim();
-    if (!normalizedSearch) {
-      setProfesores([]);
-      setError('Escribe un ID, nombre, apellido o profesión para buscar.');
-      return;
-    }
-
     if (!PROFESORES_API_BASE_URL) {
       setError('Configura EXPO_PUBLIC_PROFESORES_API_URL con la URL pública del servicio de profesores.');
       return;
@@ -115,8 +121,9 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
     setLoading(true);
     setError(null);
     try {
+      const query = normalizedSearch ? `?search=${encodeURIComponent(normalizedSearch)}` : '';
       const response = await fetch(
-        `${PROFESORES_API_BASE_URL}/api/profesores/datos?search=${encodeURIComponent(normalizedSearch)}`
+        `${PROFESORES_API_BASE_URL}/api/profesores/datos${query}`
       );
 
       if (!response.ok) {
@@ -160,9 +167,44 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
     }
 
     const createdProfesor = data;
-    setProfesores([createdProfesor]);
+    setProfesores((currentProfesores) => [
+      createdProfesor,
+      ...currentProfesores.filter((profesor) => profesor.id !== createdProfesor.id),
+    ]);
     setError(null);
     return createdProfesor;
+  }, []);
+
+  const updateProfesor = useCallback(async (id: number, datos: DatosProfesorEditables) => {
+    if (!MOD_PROFESORES_API_BASE_URL) {
+      throw new Error('Configura EXPO_PUBLIC_MOD_PROFESORES_API_URL con la URL pública del servicio de modificación de profesores.');
+    }
+
+    const response = await fetch(`${MOD_PROFESORES_API_BASE_URL}/api/profesores/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    });
+    const data: unknown = await response.json();
+
+    if (!response.ok) {
+      const message =
+        typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string'
+          ? data.error
+          : `Error ${response.status}: ${response.statusText}`;
+      throw new Error(message);
+    }
+
+    if (!isProfesorResponse(data)) {
+      throw new Error('El servicio devolvió una respuesta inválida al modificar el profesor.');
+    }
+
+    const updatedProfesor = data;
+    setProfesores((currentProfesores) =>
+      currentProfesores.map((profesor) => (profesor.id === id ? updatedProfesor : profesor))
+    );
+    setError(null);
+    return updatedProfesor;
   }, []);
 
   const getProfesorById = useCallback(
@@ -177,9 +219,10 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
       error,
       fetchProfesores,
       addProfesor,
+      updateProfesor,
       getProfesorById,
     }),
-    [profesores, loading, error, fetchProfesores, addProfesor, getProfesorById]
+    [profesores, loading, error, fetchProfesores, addProfesor, updateProfesor, getProfesorById]
   );
 
   return (

@@ -8,7 +8,8 @@
     "start": "node src/Profesores.js",
     "start:pokemon": "node src/server.js",
     "start:profesores": "node src/Profesores.js",
-    "start:add-profesores": "node src/addProfes.js"
+    "start:add-profesores": "node src/addProfes.js",
+    "start:mod-profesores": "node src/modProfes.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

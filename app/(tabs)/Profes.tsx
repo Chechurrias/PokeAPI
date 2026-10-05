@@ -1,4 +1,10 @@
-import { useProfesores, type NuevoProfesor, type Profesor } from '@/context/ProfesoresContext';
+import {
+  useProfesores,
+  type DatosProfesorEditables,
+  type NuevoProfesor,
+  type Profesor,
+} from '@/context/ProfesoresContext';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -58,8 +64,9 @@ export default function Profes() {
   const [expandedProfesorId, setExpandedProfesorId] = useState<string | null>(null);
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [editingProfesor, setEditingProfesor] = useState<Profesor | null>(null);
   const [profesorForm, setProfesorForm] = useState<ProfesorForm>(emptyProfesorForm);
-  const { profesores, loading, error, fetchProfesores, addProfesor } = useProfesores();
+  const { profesores, loading, error, fetchProfesores, addProfesor, updateProfesor } = useProfesores();
 
   const submitSearch = () => {
     setHasSearched(true);
@@ -70,9 +77,29 @@ export default function Profes() {
     setProfesorForm((currentForm) => ({ ...currentForm, [field]: value }));
   };
 
-  const submitNewProfesor = async () => {
+  const openEditForm = (profesor: Profesor) => {
+    setEditingProfesor(profesor);
+    setProfesorForm({
+      id: String(profesor.id),
+      name: profesor.name,
+      apellido: profesor.apellido,
+      Profesion: profesor.Profesion,
+      headline: profesor.headline ?? '',
+      location: profesor.location ?? '',
+      image: profesor.image ?? '',
+      about: profesor.about ?? '',
+    });
+  };
+
+  const closeForm = () => {
+    setIsCreateModalVisible(false);
+    setEditingProfesor(null);
+    setProfesorForm(emptyProfesorForm);
+  };
+
+  const submitProfesorForm = async () => {
     const id = Number(profesorForm.id.trim());
-    if (!Number.isSafeInteger(id) || id <= 0) {
+    if (!editingProfesor && (!Number.isSafeInteger(id) || id <= 0)) {
       Alert.alert('ID no válido', 'Ingresa un ID numérico entero y positivo.');
       return;
     }
@@ -82,30 +109,44 @@ export default function Profes() {
       return;
     }
 
-    const newProfesor: NuevoProfesor = {
-      id,
+    const editData: DatosProfesorEditables = {
       name: profesorForm.name.trim(),
       apellido: profesorForm.apellido.trim(),
       Profesion: profesorForm.Profesion.trim(),
-      ...(profesorForm.headline.trim() ? { headline: profesorForm.headline.trim() } : {}),
-      ...(profesorForm.location.trim() ? { location: profesorForm.location.trim() } : {}),
-      ...(profesorForm.image.trim() ? { image: profesorForm.image.trim() } : {}),
-      ...(profesorForm.about.trim() ? { about: profesorForm.about.trim() } : {}),
+      headline: profesorForm.headline.trim(),
+      location: profesorForm.location.trim(),
+      image: profesorForm.image.trim(),
+      about: profesorForm.about.trim(),
     };
 
     setIsCreating(true);
     try {
-      await addProfesor(newProfesor);
-      setProfesorForm(emptyProfesorForm);
-      setIsCreateModalVisible(false);
-      setSearch('');
-      setHasSearched(true);
-      setExpandedProfesorId(null);
-      Alert.alert('Profesor creado', 'El profesor se agregó correctamente.');
-    } catch (creationError) {
+      if (editingProfesor) {
+        await updateProfesor(editingProfesor.id, editData);
+        closeForm();
+        Alert.alert('Profesor actualizado', 'La información se modificó correctamente.');
+      } else {
+        const newProfesor: NuevoProfesor = {
+          id,
+          name: editData.name,
+          apellido: editData.apellido,
+          Profesion: editData.Profesion,
+          ...(editData.headline ? { headline: editData.headline } : {}),
+          ...(editData.location ? { location: editData.location } : {}),
+          ...(editData.image ? { image: editData.image } : {}),
+          ...(editData.about ? { about: editData.about } : {}),
+        };
+        await addProfesor(newProfesor);
+        closeForm();
+        setSearch('');
+        setHasSearched(true);
+        setExpandedProfesorId(null);
+        Alert.alert('Profesor creado', 'El profesor se agregó correctamente.');
+      }
+    } catch (saveError) {
       const message =
-        creationError instanceof Error ? creationError.message : 'Ocurrió un error al crear el profesor.';
-      Alert.alert('No se pudo crear el profesor', message);
+        saveError instanceof Error ? saveError.message : 'Ocurrió un error al guardar el profesor.';
+      Alert.alert('No se pudo guardar el profesor', message);
     } finally {
       setIsCreating(false);
     }
@@ -220,16 +261,27 @@ export default function Profes() {
           </>
         )}
 
-        {hasAdditionalInfo && (
+        <View style={styles.cardActions}>
+          {hasAdditionalInfo && (
+            <TouchableOpacity
+              onPress={() => setExpandedProfesorId(isExpanded ? null : profesorKey)}
+              style={styles.expandButton}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: isExpanded }}
+            >
+              <Text style={styles.expandButtonText}>{isExpanded ? 'Ver menos' : 'Ver más...'}</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
-            onPress={() => setExpandedProfesorId(isExpanded ? null : profesorKey)}
-            style={styles.expandButton}
+            onPress={() => openEditForm(item)}
+            style={styles.editButton}
             accessibilityRole="button"
-            accessibilityState={{ expanded: isExpanded }}
+            accessibilityLabel={`Editar información de ${item.name} ${item.apellido}`}
           >
-            <Text style={styles.expandButtonText}>{isExpanded ? 'Ver menos' : 'Ver más...'}</Text>
+            <MaterialIcons name="edit" size={16} color="#075eaa" />
+            <Text style={styles.editButtonText}>Editar</Text>
           </TouchableOpacity>
-        )}
+        </View>
       </View>
     );
   };
@@ -262,7 +314,7 @@ export default function Profes() {
           value={search}
           onChangeText={setSearch}
           onSubmitEditing={submitSearch}
-          placeholder="ID, nombre o profesión"
+          placeholder="ID, nombre o profesión (vacío: mostrar todos)"
           returnKeyType="search"
           style={styles.searchInput}
           accessibilityLabel="Buscar profesores por ID, nombre, apellido o profesión"
@@ -289,16 +341,16 @@ export default function Profes() {
         }
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            {hasSearched ? 'No se encontraron profesores.' : 'Busca por ID, nombre, apellido o profesión.'}
+            {hasSearched ? 'No se encontraron profesores.' : 'Busca un profesor o presiona Buscar para ver todos.'}
           </Text>
         }
       />
 
       <Modal
-        visible={isCreateModalVisible}
+        visible={isCreateModalVisible || editingProfesor !== null}
         animationType="slide"
         transparent
-        onRequestClose={() => setIsCreateModalVisible(false)}
+        onRequestClose={closeForm}
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
@@ -306,9 +358,9 @@ export default function Profes() {
         >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Crear profesor</Text>
+              <Text style={styles.modalTitle}>{editingProfesor ? 'Editar profesor' : 'Crear profesor'}</Text>
               <TouchableOpacity
-                onPress={() => setIsCreateModalVisible(false)}
+                onPress={closeForm}
                 style={styles.modalCloseButton}
                 accessibilityRole="button"
                 accessibilityLabel="Cerrar formulario"
@@ -320,15 +372,19 @@ export default function Profes() {
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.formContent}
             >
-              <Text style={styles.fieldLabel}>ID *</Text>
-              <TextInput
-                value={profesorForm.id}
-                onChangeText={(value) => updateProfesorForm('id', value)}
-                placeholder="Ej. 3"
-                keyboardType="number-pad"
-                style={styles.formInput}
-                accessibilityLabel="ID del profesor"
-              />
+              {!editingProfesor && (
+                <>
+                  <Text style={styles.fieldLabel}>ID *</Text>
+                  <TextInput
+                    value={profesorForm.id}
+                    onChangeText={(value) => updateProfesorForm('id', value)}
+                    placeholder="Ej. 3"
+                    keyboardType="number-pad"
+                    style={styles.formInput}
+                    accessibilityLabel="ID del profesor"
+                  />
+                </>
+              )}
 
               <Text style={styles.fieldLabel}>Nombre *</Text>
               <TextInput
@@ -398,13 +454,13 @@ export default function Profes() {
               />
 
               <TouchableOpacity
-                onPress={() => void submitNewProfesor()}
+                onPress={() => void submitProfesorForm()}
                 disabled={isCreating}
                 style={[styles.submitButton, isCreating && styles.searchButtonDisabled]}
                 accessibilityRole="button"
               >
                 <Text style={styles.submitButtonText}>
-                  {isCreating ? 'Creando...' : 'Guardar profesor'}
+                  {isCreating ? 'Guardando...' : editingProfesor ? 'Guardar cambios' : 'Guardar profesor'}
                 </Text>
               </TouchableOpacity>
             </ScrollView>
@@ -464,14 +520,30 @@ const styles = StyleSheet.create({
     color: '#1d4e89',
     fontWeight: '600',
   },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
   expandButton: {
     alignSelf: 'flex-start',
     minHeight: 40,
     justifyContent: 'center',
-    marginTop: 10,
     paddingHorizontal: 2,
   },
   expandButtonText: { color: '#075eaa', fontSize: 14, fontWeight: '600' },
+  editButton: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: 8,
+    backgroundColor: '#e8f1f8',
+    paddingHorizontal: 10,
+  },
+  editButtonText: { color: '#075eaa', fontSize: 13, fontWeight: '600' },
   searchRow: {
     flexDirection: 'row',
     gap: 8,
