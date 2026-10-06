@@ -9,19 +9,19 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    KeyboardAvoidingView,
-    Linking,
-    Modal,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 type ProfesorForm = {
@@ -64,9 +64,18 @@ export default function Profes() {
   const [expandedProfesorId, setExpandedProfesorId] = useState<string | null>(null);
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [deletingProfesorId, setDeletingProfesorId] = useState<number | null>(null);
   const [editingProfesor, setEditingProfesor] = useState<Profesor | null>(null);
   const [profesorForm, setProfesorForm] = useState<ProfesorForm>(emptyProfesorForm);
-  const { profesores, loading, error, fetchProfesores, addProfesor, updateProfesor } = useProfesores();
+  const {
+    profesores,
+    loading,
+    error,
+    fetchProfesores,
+    addProfesor,
+    updateProfesor,
+    deleteProfesor,
+  } = useProfesores();
 
   const submitSearch = () => {
     setHasSearched(true);
@@ -150,6 +159,37 @@ export default function Profes() {
     } finally {
       setIsCreating(false);
     }
+  };
+
+  const confirmDeleteProfesor = (profesor: Profesor) => {
+    Alert.alert(
+      'Eliminar profesor',
+      `¿Seguro que deseas eliminar a ${profesor.name} ${profesor.apellido}? Esta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => {
+            setDeletingProfesorId(profesor.id);
+            void deleteProfesor(profesor.id)
+              .then(() => {
+                if (expandedProfesorId === getProfesorKey(profesor)) {
+                  setExpandedProfesorId(null);
+                }
+              })
+              .catch((deleteError: unknown) => {
+                const message =
+                  deleteError instanceof Error
+                    ? deleteError.message
+                    : 'Ocurrió un error al eliminar el profesor.';
+                Alert.alert('No se pudo eliminar el profesor', message);
+              })
+              .finally(() => setDeletingProfesorId(null));
+          },
+        },
+      ]
+    );
   };
 
   const renderProfesorItem = ({ item }: { item: Profesor }) => {
@@ -280,6 +320,18 @@ export default function Profes() {
           >
             <MaterialIcons name="edit" size={16} color="#075eaa" />
             <Text style={styles.editButtonText}>Editar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => confirmDeleteProfesor(item)}
+            style={[styles.deleteButton, deletingProfesorId === item.id && styles.searchButtonDisabled]}
+            disabled={deletingProfesorId !== null}
+            accessibilityRole="button"
+            accessibilityLabel={`Eliminar a ${item.name} ${item.apellido}`}
+          >
+            <MaterialIcons name="delete-outline" size={17} color="#b42318" />
+            <Text style={styles.deleteButtonText}>
+              {deletingProfesorId === item.id ? 'Eliminando...' : 'Eliminar'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -523,7 +575,8 @@ const styles = StyleSheet.create({
   cardActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
     marginTop: 8,
   },
   expandButton: {
@@ -544,6 +597,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   editButtonText: { color: '#075eaa', fontSize: 13, fontWeight: '600' },
+  deleteButton: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: 8,
+    backgroundColor: '#fff0ef',
+    paddingHorizontal: 10,
+  },
+  deleteButtonText: { color: '#b42318', fontSize: 13, fontWeight: '600' },
   searchRow: {
     flexDirection: 'row',
     gap: 8,

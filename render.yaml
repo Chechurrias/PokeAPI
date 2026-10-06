@@ -74,3 +74,18 @@ services:
         value: Profesores
       - key: ALLOWED_ORIGINS
         sync: false
+  - type: web
+    name: del-profesores-api
+    env: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm run start:del-profesores
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: PROFESORES_MONGODB_DATABASE
+        value: Profesores
+      - key: ALLOWED_ORIGINS
+        sync: false

@@ -71,12 +71,14 @@ interface ProfesoresContextType {
   fetchProfesores: (search: string) => Promise<void>;
   addProfesor: (profesor: NuevoProfesor) => Promise<Profesor>;
   updateProfesor: (id: number, datos: DatosProfesorEditables) => Promise<Profesor>;
+  deleteProfesor: (id: number) => Promise<void>;
   getProfesorById: (id: number) => Profesor | undefined;
 }
 
 const PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_PROFESORES_API_URL?.replace(/\/$/, '');
 const ADD_PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_ADD_PROFESORES_API_URL?.replace(/\/$/, '');
 const MOD_PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_MOD_PROFESORES_API_URL?.replace(/\/$/, '');
+const DEL_PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_DEL_PROFESORES_API_URL?.replace(/\/$/, '');
 
 function isProfesorId(value: unknown): value is Profesor['_id'] {
   return (
@@ -207,6 +209,28 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
     return updatedProfesor;
   }, []);
 
+  const deleteProfesor = useCallback(async (id: number) => {
+    if (!DEL_PROFESORES_API_BASE_URL) {
+      throw new Error('Configura EXPO_PUBLIC_DEL_PROFESORES_API_URL con la URL pública del servicio de eliminación de profesores.');
+    }
+
+    const response = await fetch(`${DEL_PROFESORES_API_BASE_URL}/api/profesores/${id}`, {
+      method: 'DELETE',
+    });
+    const data: unknown = await response.json();
+
+    if (!response.ok) {
+      const message =
+        typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string'
+          ? data.error
+          : `Error ${response.status}: ${response.statusText}`;
+      throw new Error(message);
+    }
+
+    setProfesores((currentProfesores) => currentProfesores.filter((profesor) => profesor.id !== id));
+    setError(null);
+  }, []);
+
   const getProfesorById = useCallback(
     (id: number) => profesores.find((p) => p.id === id),
     [profesores]
@@ -220,9 +244,10 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
       fetchProfesores,
       addProfesor,
       updateProfesor,
+      deleteProfesor,
       getProfesorById,
     }),
-    [profesores, loading, error, fetchProfesores, addProfesor, updateProfesor, getProfesorById]
+    [profesores, loading, error, fetchProfesores, addProfesor, updateProfesor, deleteProfesor, getProfesorById]
   );
 
   return (
