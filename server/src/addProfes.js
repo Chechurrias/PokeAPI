@@ -30,7 +30,6 @@ const ContactSchema = new mongoose.Schema(
 
 const ProfesorSchema = new mongoose.Schema(
   {
-    id: Number,
     name: String,
     apellido: String,
     headline: String,
@@ -86,13 +85,7 @@ export async function addProfesor(Profesor, payload) {
     throw new AddProfesorError('El cuerpo de la solicitud debe ser un objeto JSON.');
   }
 
-  const id = payload.id;
-  if (!Number.isSafeInteger(id) || id <= 0) {
-    throw new AddProfesorError('El ID debe ser un número entero positivo.');
-  }
-
   const profesorData = {
-    id,
     name: readRequiredString(payload.name, 'name'),
     apellido: readRequiredString(payload.apellido, 'apellido'),
     Profesion: readRequiredString(payload.Profesion, 'Profesion'),
@@ -101,11 +94,6 @@ export async function addProfesor(Profesor, payload) {
   for (const fieldName of ['headline', 'image', 'location', 'about']) {
     const value = readOptionalString(payload[fieldName], fieldName);
     if (value) profesorData[fieldName] = value;
-  }
-
-  const existingProfesor = await Profesor.exists({ id });
-  if (existingProfesor) {
-    throw new AddProfesorError(`Ya existe un profesor con el ID ${id}.`, 409);
   }
 
   return Profesor.create(profesorData);
@@ -148,7 +136,9 @@ async function readJsonBody(request) {
 
 function applyCors(request, response) {
   const origin = request.headers.origin;
-  if (origin && !allowedOrigins.has(origin)) {
+  const isLocalDevelopmentOrigin =
+    origin && /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin);
+  if (origin && !allowedOrigins.has(origin) && !isLocalDevelopmentOrigin) {
     sendJson(response, 403, { error: 'Origen no permitido.' });
     return false;
   }

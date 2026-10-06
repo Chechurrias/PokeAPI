@@ -25,7 +25,6 @@ import {
 } from 'react-native';
 
 type ProfesorForm = {
-  id: string;
   name: string;
   apellido: string;
   Profesion: string;
@@ -36,7 +35,6 @@ type ProfesorForm = {
 };
 
 const emptyProfesorForm: ProfesorForm = {
-  id: '',
   name: '',
   apellido: '',
   Profesion: '',
@@ -52,9 +50,8 @@ function openExternalUrl(url: string) {
 }
 
 function getProfesorKey(item: Profesor) {
-  return typeof item._id === 'object' && item._id?.$oid
-    ? item._id.$oid
-    : String(item._id || item.id);
+  if (typeof item._id === 'string') return item._id;
+  return item._id.$oid ?? '';
 }
 
 export default function Profes() {
@@ -64,7 +61,7 @@ export default function Profes() {
   const [expandedProfesorId, setExpandedProfesorId] = useState<string | null>(null);
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [deletingProfesorId, setDeletingProfesorId] = useState<number | null>(null);
+  const [deletingProfesorId, setDeletingProfesorId] = useState<string | null>(null);
   const [editingProfesor, setEditingProfesor] = useState<Profesor | null>(null);
   const [profesorForm, setProfesorForm] = useState<ProfesorForm>(emptyProfesorForm);
   const {
@@ -89,7 +86,6 @@ export default function Profes() {
   const openEditForm = (profesor: Profesor) => {
     setEditingProfesor(profesor);
     setProfesorForm({
-      id: String(profesor.id),
       name: profesor.name,
       apellido: profesor.apellido,
       Profesion: profesor.Profesion,
@@ -107,12 +103,6 @@ export default function Profes() {
   };
 
   const submitProfesorForm = async () => {
-    const id = Number(profesorForm.id.trim());
-    if (!editingProfesor && (!Number.isSafeInteger(id) || id <= 0)) {
-      Alert.alert('ID no válido', 'Ingresa un ID numérico entero y positivo.');
-      return;
-    }
-
     if (!profesorForm.name.trim() || !profesorForm.apellido.trim() || !profesorForm.Profesion.trim()) {
       Alert.alert('Faltan datos', 'Nombre, apellido y profesión son obligatorios.');
       return;
@@ -131,12 +121,11 @@ export default function Profes() {
     setIsCreating(true);
     try {
       if (editingProfesor) {
-        await updateProfesor(editingProfesor.id, editData);
+        await updateProfesor(getProfesorKey(editingProfesor), editData);
         closeForm();
         Alert.alert('Profesor actualizado', 'La información se modificó correctamente.');
       } else {
         const newProfesor: NuevoProfesor = {
-          id,
           name: editData.name,
           apellido: editData.apellido,
           Profesion: editData.Profesion,
@@ -171,8 +160,9 @@ export default function Profes() {
           text: 'Eliminar',
           style: 'destructive',
           onPress: () => {
-            setDeletingProfesorId(profesor.id);
-            void deleteProfesor(profesor.id)
+            const profesorKey = getProfesorKey(profesor);
+            setDeletingProfesorId(profesorKey);
+            void deleteProfesor(profesorKey)
               .then(() => {
                 if (expandedProfesorId === getProfesorKey(profesor)) {
                   setExpandedProfesorId(null);
@@ -221,7 +211,7 @@ export default function Profes() {
               <Text style={styles.name}>
                 {item.name} {item.apellido}
               </Text>
-              <Text style={styles.badge}>ID: {item.id}</Text>
+              <Text style={styles.badge}>ID: {profesorKey}</Text>
             </View>
             {item.headline && <Text style={styles.headline}>{item.headline}</Text>}
             <Text style={styles.profession}>{item.Profesion}</Text>
@@ -323,14 +313,14 @@ export default function Profes() {
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => confirmDeleteProfesor(item)}
-            style={[styles.deleteButton, deletingProfesorId === item.id && styles.searchButtonDisabled]}
+            style={[styles.deleteButton, deletingProfesorId === profesorKey && styles.searchButtonDisabled]}
             disabled={deletingProfesorId !== null}
             accessibilityRole="button"
             accessibilityLabel={`Eliminar a ${item.name} ${item.apellido}`}
           >
             <MaterialIcons name="delete-outline" size={17} color="#b42318" />
             <Text style={styles.deleteButtonText}>
-              {deletingProfesorId === item.id ? 'Eliminando...' : 'Eliminar'}
+              {deletingProfesorId === profesorKey ? 'Eliminando...' : 'Eliminar'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -366,7 +356,7 @@ export default function Profes() {
           value={search}
           onChangeText={setSearch}
           onSubmitEditing={submitSearch}
-          placeholder="ID, nombre o profesión (vacío: mostrar todos)"
+          placeholder="ObjectId, nombre o profesión (vacío: mostrar todos)"
           returnKeyType="search"
           style={styles.searchInput}
           accessibilityLabel="Buscar profesores por ID, nombre, apellido o profesión"
@@ -426,15 +416,6 @@ export default function Profes() {
             >
               {!editingProfesor && (
                 <>
-                  <Text style={styles.fieldLabel}>ID *</Text>
-                  <TextInput
-                    value={profesorForm.id}
-                    onChangeText={(value) => updateProfesorForm('id', value)}
-                    placeholder="Ej. 3"
-                    keyboardType="number-pad"
-                    style={styles.formInput}
-                    accessibilityLabel="ID del profesor"
-                  />
                 </>
               )}
 

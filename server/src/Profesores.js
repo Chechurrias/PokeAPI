@@ -31,7 +31,6 @@ const ContactSchema = new mongoose.Schema(
 
 const ProfesorSchema = new mongoose.Schema(
   {
-    id: Number,
     name: String,
     apellido: String,
     headline: String,
@@ -71,7 +70,9 @@ function sendJson(response, statusCode, payload) {
 }
 
 function createSearchFilter(search) {
-  if (/^\d+$/.test(search)) return { id: Number(search) };
+  if (/^[\da-f]{24}$/i.test(search)) {
+    return { _id: new mongoose.Types.ObjectId(search) };
+  }
 
   const words = search.split(/\s+/).map((word) => new RegExp(escapeRegex(word), 'i'));
   return {
@@ -121,14 +122,14 @@ const openApiSpec = {
     },
     '/api/profesores/datos': {
       get: {
-        summary: 'Lista todos los profesores o busca por ID/texto del perfil',
-        description: 'Sin search (o con search vacío) devuelve todos los profesores. Busca en nombre, apellido, titular, profesión, ubicación, experiencia, educación y habilidades.',
+        summary: 'Lista todos los profesores o busca por ObjectId/texto del perfil',
+        description: 'Sin search (o con search vacío) devuelve todos los profesores. Busca por ObjectId o en nombre, apellido, titular, profesión, ubicación, experiencia, educación y habilidades.',
         parameters: [
           {
             name: 'search',
             in: 'query',
             required: false,
-            description: 'Opcional: ID numérico o término de búsqueda. Si se omite o está vacío, devuelve todos los profesores.',
+            description: 'Opcional: ObjectId de MongoDB o término de búsqueda. Si se omite o está vacío, devuelve todos los profesores.',
             schema: { type: 'string' },
             example: 'Omar',
           },
@@ -164,7 +165,6 @@ const openApiSpec = {
         type: 'object',
         properties: {
           _id: { type: 'string', example: '6ac15a1068d39d243fc568ca' },
-          id: { type: 'integer', example: 2 },
           name: { type: 'string', example: 'Omar' },
           apellido: { type: 'string', example: 'Bonilla' },
           headline: { type: 'string' },
@@ -247,7 +247,9 @@ const swaggerHtml = `<!doctype html>
 
 function applyCorsHeaders(request, response) {
   const origin = request.headers.origin;
-  if (origin && !allowedOrigins.has(origin)) {
+  const isLocalDevelopmentOrigin =
+    origin && /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin);
+  if (origin && !allowedOrigins.has(origin) && !isLocalDevelopmentOrigin) {
     sendJson(response, 403, { error: 'Origen no permitido.' });
     return false;
   }

@@ -29,7 +29,6 @@ export interface Profesor {
   _id: {
     $oid?: string;
   } | string;
-  id: number;
   name: string;
   apellido: string;
   Profesion: string;
@@ -44,7 +43,6 @@ export interface Profesor {
 }
 
 export interface NuevoProfesor {
-  id: number;
   name: string;
   apellido: string;
   Profesion: string;
@@ -70,9 +68,9 @@ interface ProfesoresContextType {
   error: string | null;
   fetchProfesores: (search: string) => Promise<void>;
   addProfesor: (profesor: NuevoProfesor) => Promise<Profesor>;
-  updateProfesor: (id: number, datos: DatosProfesorEditables) => Promise<Profesor>;
-  deleteProfesor: (id: number) => Promise<void>;
-  getProfesorById: (id: number) => Profesor | undefined;
+  updateProfesor: (id: string, datos: DatosProfesorEditables) => Promise<Profesor>;
+  deleteProfesor: (id: string) => Promise<void>;
+  getProfesorById: (id: string) => Profesor | undefined;
 }
 
 const PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_PROFESORES_API_URL?.replace(/\/$/, '');
@@ -80,12 +78,29 @@ const ADD_PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_ADD_PROFESORES_API_U
 const MOD_PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_MOD_PROFESORES_API_URL?.replace(/\/$/, '');
 const DEL_PROFESORES_API_BASE_URL = process.env.EXPO_PUBLIC_DEL_PROFESORES_API_URL?.replace(/\/$/, '');
 
+function getProfesorIdentity(profesor: Profesor) {
+  if (typeof profesor._id === 'string') return profesor._id;
+  return profesor._id.$oid ?? '';
+}
+
+function uniqueProfesores(profesores: Profesor[]) {
+  const seen = new Set<string>();
+  return profesores.filter((profesor) => {
+    const identity = getProfesorIdentity(profesor);
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
 function isProfesorId(value: unknown): value is Profesor['_id'] {
   return (
-    typeof value === 'string' ||
+    (typeof value === 'string' && /^[\da-f]{24}$/i.test(value)) ||
     (typeof value === 'object' &&
       value !== null &&
-      (!('$oid' in value) || typeof value.$oid === 'string'))
+      '$oid' in value &&
+      typeof value.$oid === 'string' &&
+      /^[\da-f]{24}$/i.test(value.$oid))
   );
 }
 
@@ -95,8 +110,6 @@ function isProfesorResponse(value: unknown): value is Profesor {
     value !== null &&
     '_id' in value &&
     isProfesorId(value._id) &&
-    'id' in value &&
-    typeof value.id === 'number' &&
     'name' in value &&
     typeof value.name === 'string' &&
     'apellido' in value &&
@@ -133,7 +146,7 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
       }
 
       const data: Profesor[] = await response.json();
-      setProfesores(data);
+      setProfesores(uniqueProfesores(data));
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Error al obtener la lista de profesores';
@@ -169,15 +182,17 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
     }
 
     const createdProfesor = data;
-    setProfesores((currentProfesores) => [
+    setProfesores((currentProfesores) => uniqueProfesores([
       createdProfesor,
-      ...currentProfesores.filter((profesor) => profesor.id !== createdProfesor.id),
-    ]);
+      ...currentProfesores.filter(
+        (profesor) => getProfesorIdentity(profesor) !== getProfesorIdentity(createdProfesor)
+      ),
+    ]));
     setError(null);
     return createdProfesor;
   }, []);
 
-  const updateProfesor = useCallback(async (id: number, datos: DatosProfesorEditables) => {
+  const updateProfesor = useCallback(async (id: string, datos: DatosProfesorEditables) => {
     if (!MOD_PROFESORES_API_BASE_URL) {
       throw new Error('Configura EXPO_PUBLIC_MOD_PROFESORES_API_URL con la URL pública del servicio de modificación de profesores.');
     }
@@ -203,13 +218,15 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
 
     const updatedProfesor = data;
     setProfesores((currentProfesores) =>
-      currentProfesores.map((profesor) => (profesor.id === id ? updatedProfesor : profesor))
+      uniqueProfesores(currentProfesores.map((profesor) =>
+        getProfesorIdentity(profesor) === id ? updatedProfesor : profesor
+      ))
     );
     setError(null);
     return updatedProfesor;
   }, []);
 
-  const deleteProfesor = useCallback(async (id: number) => {
+  const deleteProfesor = useCallback(async (id: string) => {
     if (!DEL_PROFESORES_API_BASE_URL) {
       throw new Error('Configura EXPO_PUBLIC_DEL_PROFESORES_API_URL con la URL pública del servicio de eliminación de profesores.');
     }
@@ -227,12 +244,14 @@ export function ProfesoresProvider({ children }: Readonly<PropsWithChildren>) {
       throw new Error(message);
     }
 
-    setProfesores((currentProfesores) => currentProfesores.filter((profesor) => profesor.id !== id));
+    setProfesores((currentProfesores) =>
+      currentProfesores.filter((profesor) => getProfesorIdentity(profesor) !== id)
+    );
     setError(null);
   }, []);
 
   const getProfesorById = useCallback(
-    (id: number) => profesores.find((p) => p.id === id),
+    (id: string) => profesores.find((profesor) => getProfesorIdentity(profesor) === id),
     [profesores]
   );
 

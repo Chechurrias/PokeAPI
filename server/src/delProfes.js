@@ -30,7 +30,6 @@ const ContactSchema = new mongoose.Schema(
 
 const ProfesorSchema = new mongoose.Schema(
   {
-    id: Number,
     name: String,
     apellido: String,
     headline: String,
@@ -65,18 +64,13 @@ export class DelProfesorError extends Error {
 }
 
 export async function deleteProfesor(ProfesorModel, rawId) {
-  if (!/^[1-9]\d*$/.test(rawId)) {
-    throw new DelProfesorError('El ID debe ser un número entero positivo.');
+  if (!/^[\da-f]{24}$/i.test(rawId)) {
+    throw new DelProfesorError('El ID del profesor debe ser un ObjectId válido de MongoDB.');
   }
 
-  const id = Number(rawId);
-  if (!Number.isSafeInteger(id)) {
-    throw new DelProfesorError('El ID está fuera del rango permitido.');
-  }
-
-  const deletedProfesor = await ProfesorModel.findOneAndDelete({ id }).lean();
+  const deletedProfesor = await ProfesorModel.findByIdAndDelete(rawId).lean();
   if (!deletedProfesor) {
-    throw new DelProfesorError(`No se encontró un profesor con el ID ${id}.`, 404);
+    throw new DelProfesorError(`No se encontró un profesor con el ID ${rawId}.`, 404);
   }
 
   return deletedProfesor;
@@ -89,7 +83,9 @@ function sendJson(response, statusCode, payload) {
 
 function applyCors(request, response) {
   const origin = request.headers.origin;
-  if (origin && !allowedOrigins.has(origin)) {
+  const isLocalDevelopmentOrigin =
+    origin && /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin);
+  if (origin && !allowedOrigins.has(origin) && !isLocalDevelopmentOrigin) {
     sendJson(response, 403, { error: 'Origen no permitido.' });
     return false;
   }
@@ -126,7 +122,7 @@ async function handleRequest(request, response) {
     }
   }
 
-  const routeMatch = url.pathname.match(/^\/api\/profesores\/([1-9]\d*)$/);
+  const routeMatch = url.pathname.match(/^\/api\/profesores\/([^/]+)$/);
   if (routeMatch && request.method !== 'DELETE') {
     response.setHeader('Allow', 'DELETE, OPTIONS');
     return sendJson(response, 405, { error: 'Método no permitido. Usa DELETE.' });
@@ -139,7 +135,7 @@ async function handleRequest(request, response) {
   try {
     const profesor = await deleteProfesor(Profesor, routeMatch[1]);
     return sendJson(response, 200, {
-      message: `Se eliminó el profesor con ID ${profesor.id}.`,
+      message: `Se eliminó el profesor con ID ${profesor._id}.`,
       profesor,
     });
   } catch (error) {

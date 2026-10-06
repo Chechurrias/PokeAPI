@@ -30,7 +30,6 @@ const ContactSchema = new mongoose.Schema(
 
 const ProfesorSchema = new mongoose.Schema(
   {
-    id: Number,
     name: String,
     apellido: String,
     headline: String,
@@ -82,12 +81,8 @@ function readOptionalString(value, fieldName) {
 }
 
 export async function modifyProfesor(ProfesorModel, rawId, payload) {
-  if (!/^[1-9]\d*$/.test(rawId)) {
-    throw new ModProfesorError('El ID debe ser un número entero positivo.');
-  }
-  const id = Number(rawId);
-  if (!Number.isSafeInteger(id)) {
-    throw new ModProfesorError('El ID está fuera del rango permitido.');
+  if (!/^[\da-f]{24}$/i.test(rawId)) {
+    throw new ModProfesorError('El ID del profesor debe ser un ObjectId válido de MongoDB.');
   }
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new ModProfesorError('El cuerpo de la solicitud debe ser un objeto JSON.');
@@ -109,14 +104,14 @@ export async function modifyProfesor(ProfesorModel, rawId, payload) {
       : readOptionalString(payload[field], field);
   }
 
-  const profesor = await ProfesorModel.findOneAndUpdate(
-    { id },
+  const profesor = await ProfesorModel.findByIdAndUpdate(
+    rawId,
     { $set: updates },
     { new: true, runValidators: true }
   ).lean();
 
   if (!profesor) {
-    throw new ModProfesorError(`No se encontró un profesor con el ID ${id}.`, 404);
+    throw new ModProfesorError(`No se encontró un profesor con el ID ${rawId}.`, 404);
   }
 
   return profesor;
@@ -159,7 +154,9 @@ async function readJsonBody(request) {
 
 function applyCors(request, response) {
   const origin = request.headers.origin;
-  if (origin && !allowedOrigins.has(origin)) {
+  const isLocalDevelopmentOrigin =
+    origin && /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin);
+  if (origin && !allowedOrigins.has(origin) && !isLocalDevelopmentOrigin) {
     sendJson(response, 403, { error: 'Origen no permitido.' });
     return false;
   }
@@ -196,7 +193,7 @@ async function handleRequest(request, response) {
     }
   }
 
-  const routeMatch = url.pathname.match(/^\/api\/profesores\/([1-9]\d*)$/);
+  const routeMatch = url.pathname.match(/^\/api\/profesores\/([^/]+)$/);
   if (routeMatch && request.method !== 'PATCH') {
     response.setHeader('Allow', 'PATCH, OPTIONS');
     return sendJson(response, 405, { error: 'Método no permitido. Usa PATCH.' });
