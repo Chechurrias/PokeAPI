@@ -4,7 +4,50 @@ import { createReadStream } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import swaggerUiDist from 'swagger-ui-dist';
-import { Profesor } from './ProfesorModel.js';
+
+const ExperienceSchema = new mongoose.Schema(
+  {
+    company: String,
+    role: String,
+    period: String,
+    description: String,
+  },
+  { _id: false }
+);
+
+const EducationSchema = new mongoose.Schema(
+  {
+    institution: String,
+    degree: String,
+    year: mongoose.Schema.Types.Mixed,
+  },
+  { _id: false }
+);
+
+const ContactSchema = new mongoose.Schema(
+  { linkedin: String, website: String },
+  { _id: false }
+);
+
+const ProfesorSchema = new mongoose.Schema(
+  {
+    id: Number,
+    name: String,
+    apellido: String,
+    headline: String,
+    Profesion: String,
+    image: String,
+    location: String,
+    about: String,
+    experience: [ExperienceSchema],
+    education: [EducationSchema],
+    skills: [String],
+    contact: ContactSchema,
+  },
+  { collection: 'datos' }
+);
+
+const Profesor = mongoose.model('Profesor', ProfesorSchema);
 
 const allowedOrigins = new Set(
   (process.env.ALLOWED_ORIGINS ?? 'http://localhost:8081,http://localhost:19006')
