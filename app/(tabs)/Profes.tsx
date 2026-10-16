@@ -8,7 +8,6 @@ import {
 } from '@/context/ProfesoresContext';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   Alert, FlatList, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput,
@@ -40,7 +39,6 @@ function getProfesorKey(item: Profesor) {
 }
 
 export default function Profes() {
-  const router = useRouter();
   const [search, setSearch] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [expandedProfesorId, setExpandedProfesorId] = useState<string | null>(null);

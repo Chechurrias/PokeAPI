@@ -83,13 +83,7 @@ undefined;
   pokemon?.sprites?.front_default ??
   undefined;
 
-
-
-
-
-
-    
-  return (
+return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#2085b7', dark: '#116581' }}
       headerImage={
@@ -130,10 +124,9 @@ undefined;
           <ThemedView style={styles.resultContainer}>
             {spriteUrl && (
               <Image
-                source={{ uri: spriteUrl2 }}
+                source={{ uri: spriteUrl }}
                 style={styles.pokemonImage}
                 contentFit="contain"
-                autoplay
               />
             )}
             <ThemedText type="subtitle">
@@ -143,10 +136,17 @@ undefined;
               Tipos: {pokemon.types?.map(({ type }) => type.name).join(', ')}
             </ThemedText>
             <ThemedView style={styles.spriteGrid}>
-              <Image source={{ uri: spriteUrl }} style={styles.spriteImage} contentFit="contain" />
-              <Image source={{ uri: spriteUrl3 }} style={styles.spriteImage} contentFit="contain" />
-              <Image source={{ uri: spriteUrl4 }} style={styles.spriteImage} contentFit="contain" />
-              <Image source={{ uri: spriteUrl5 }} style={styles.spriteImage} contentFit="contain" />
+              {[spriteUrl2, spriteUrl3, spriteUrl4, spriteUrl5]
+                .filter((sprite): sprite is string => Boolean(sprite))
+                .map((sprite, index) => (
+                  <Image
+                    key={`${sprite}-${index}`}
+                    source={{ uri: sprite }}
+                    style={styles.spriteImage}
+                    contentFit="contain"
+                    autoplay
+                  />
+                ))}
             </ThemedView>
 
           </ThemedView>
@@ -159,7 +159,7 @@ undefined;
 const styles = StyleSheet.create({
   titleContainer:
   { flexDirection: 'row', 
-    alignItems: 'center', gap: 8 
+    alignItems: 'flex-start', gap: 8
   },
   inputContainer: { 
     gap: 8, 

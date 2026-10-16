@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import { createServer } from 'node:http';
-import Profesor, { initializeProfesorCollection, upsertProfesorByUuid } from './profesorModel.js';
+import Profesor, { createProfesorWithoutDuplicate, initializeProfesorCollection } from './profesorModel.js';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -59,7 +59,7 @@ export async function addProfesor(Profesor, payload) {
   const uuid = payload.uuid ?? randomUUID();
   const updatedAt = payload.updated_at ?? new Date();
 
-  return upsertProfesorByUuid(Profesor, {
+  return createProfesorWithoutDuplicate(Profesor, {
     ...payload,
     ...profesorData,
     uuid,

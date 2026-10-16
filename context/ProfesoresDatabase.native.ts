@@ -410,16 +410,34 @@ export async function deleteLocalProfesor(identity: string) {
 
 export async function markProfesorCreated(localId: string, profesor: Profesor) {
   const database = await getDatabase();
+  const remoteId = getProfesorIdentity(profesor);
   await database.withTransactionAsync(async () => {
+    await database.runAsync('DELETE FROM profesores_outbox WHERE local_uuid = ?', localId);
+    const existingCloudRow = await database.getFirstAsync<{ uuid: string }>(
+      'SELECT uuid FROM profesores WHERE uuid = ? AND uuid != ?',
+      profesor.uuid,
+      localId
+    );
+    if (existingCloudRow) {
+      await database.runAsync('DELETE FROM profesores WHERE uuid = ?', localId);
+      await database.runAsync(
+        'UPDATE profesores SET remote_id = ?, data_json = ?, is_deleted = 0, updated_at = ? WHERE uuid = ?',
+        remoteId,
+        JSON.stringify(profesor),
+        profesor.updated_at,
+        profesor.uuid
+      );
+      return;
+    }
+
     await database.runAsync(
       'UPDATE profesores SET uuid = ?, remote_id = ?, data_json = ?, is_deleted = 0, updated_at = ? WHERE uuid = ?',
       profesor.uuid,
-      getProfesorIdentity(profesor),
+      remoteId,
       JSON.stringify(profesor),
       profesor.updated_at,
       localId
     );
-    await database.runAsync('DELETE FROM profesores_outbox WHERE local_uuid = ?', localId);
   });
 }
 
