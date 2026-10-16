@@ -2,51 +2,9 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import { createReadStream } from 'node:fs';
 import { createServer } from 'node:http';
+import Profesor, { initializeProfesorCollection } from './profesorModel.js';
 import { join } from 'node:path';
 import swaggerUiDist from 'swagger-ui-dist';
-
-const ExperienceSchema = new mongoose.Schema(
-  {
-    company: String,
-    role: String,
-    period: String,
-    description: String,
-  },
-  { _id: false }
-);
-
-const EducationSchema = new mongoose.Schema(
-  {
-    institution: String,
-    degree: String,
-    year: mongoose.Schema.Types.Mixed,
-  },
-  { _id: false }
-);
-
-const ContactSchema = new mongoose.Schema(
-  { linkedin: String, website: String },
-  { _id: false }
-);
-
-const ProfesorSchema = new mongoose.Schema(
-  {
-    name: String,
-    apellido: String,
-    headline: String,
-    Profesion: String,
-    image: String,
-    location: String,
-    about: String,
-    experience: [ExperienceSchema],
-    education: [EducationSchema],
-    skills: [String],
-    contact: ContactSchema,
-  },
-  { collection: 'datos' }
-);
-
-const Profesor = mongoose.model('Profesor', ProfesorSchema);
 
 const allowedOrigins = new Set(
   (process.env.ALLOWED_ORIGINS ?? 'http://localhost:8081,http://localhost:19006')
@@ -70,6 +28,9 @@ function sendJson(response, statusCode, payload) {
 }
 
 function createSearchFilter(search) {
+  if (/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(search)) {
+    return { uuid: search };
+  }
   if (/^[\da-f]{24}$/i.test(search)) {
     return { _id: new mongoose.Types.ObjectId(search) };
   }
@@ -165,6 +126,9 @@ const openApiSpec = {
         type: 'object',
         properties: {
           _id: { type: 'string', example: '6ac15a1068d39d243fc568ca' },
+          uuid: { type: 'string', format: 'uuid', example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' },
+          updated_at: { type: 'string', format: 'date-time' },
+          is_deleted: { type: 'boolean' },
           name: { type: 'string', example: 'Omar' },
           apellido: { type: 'string', example: 'Bonilla' },
           headline: { type: 'string' },
@@ -307,8 +271,10 @@ async function handleProfessorSearch(url, response) {
   const search = (url.searchParams.get('search') ?? '').trim();
 
   try {
-    const query = search ? createSearchFilter(search) : {};
-    const profesoresQuery = Profesor.find(query).sort({ id: 1 });
+    const query = search
+      ? { $and: [createSearchFilter(search), { is_deleted: { $ne: true } }] }
+      : { is_deleted: { $ne: true } };
+    const profesoresQuery = Profesor.find(query).sort({ _id: 1 });
     const profesores = await (search ? profesoresQuery.limit(50) : profesoresQuery).lean();
     return sendJson(response, 200, profesores);
   } catch (error) {
@@ -347,6 +313,7 @@ const server = createServer((request, response) => {
 await mongoose.connect(mongoUri, {
   dbName: process.env.PROFESORES_MONGODB_DATABASE ?? 'Profesores',
 });
+await initializeProfesorCollection(Profesor);
 server.listen(port, '0.0.0.0', () =>
   console.log(`🚀 Microservicio de profesores escuchando en puerto ${port}`)
 );

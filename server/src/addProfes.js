@@ -1,51 +1,11 @@
 import 'dotenv/config';
+import { Buffer } from 'node:buffer';
+import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import { createServer } from 'node:http';
+import Profesor, { initializeProfesorCollection, upsertProfesorByUuid } from './profesorModel.js';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-
-const ExperienceSchema = new mongoose.Schema(
-  {
-    company: String,
-    role: String,
-    period: String,
-    description: String,
-  },
-  { _id: false }
-);
-
-const EducationSchema = new mongoose.Schema(
-  {
-    institution: String,
-    degree: String,
-    year: mongoose.Schema.Types.Mixed,
-  },
-  { _id: false }
-);
-
-const ContactSchema = new mongoose.Schema(
-  { linkedin: String, website: String },
-  { _id: false }
-);
-
-const ProfesorSchema = new mongoose.Schema(
-  {
-    name: String,
-    apellido: String,
-    headline: String,
-    Profesion: String,
-    image: String,
-    location: String,
-    about: String,
-    experience: [ExperienceSchema],
-    education: [EducationSchema],
-    skills: [String],
-    contact: ContactSchema,
-  },
-  { collection: 'datos' }
-);
-
-const Profesor = mongoose.model('Profesor', ProfesorSchema);
 
 const allowedOrigins = new Set(
   (process.env.ALLOWED_ORIGINS ?? 'http://localhost:8081,http://localhost:19006')
@@ -96,7 +56,15 @@ export async function addProfesor(Profesor, payload) {
     if (value) profesorData[fieldName] = value;
   }
 
-  return Profesor.create(profesorData);
+  const uuid = payload.uuid ?? randomUUID();
+  const updatedAt = payload.updated_at ?? new Date();
+
+  return upsertProfesorByUuid(Profesor, {
+    ...payload,
+    ...profesorData,
+    uuid,
+    updated_at: updatedAt,
+  });
 }
 
 function sendJson(response, statusCode, payload) {
@@ -229,6 +197,7 @@ async function startServer() {
   await mongoose.connect(mongoUri, {
     dbName: process.env.PROFESORES_MONGODB_DATABASE ?? 'Profesores',
   });
+  await initializeProfesorCollection(Profesor);
   server.listen(port, '0.0.0.0', () => {
     console.log(`Microservicio de creación de profesores escuchando en 0.0.0.0:${port}`);
   });

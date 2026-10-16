@@ -1,27 +1,18 @@
 import {
+  SYNC_INTERVAL_OPTIONS,
   useProfesores,
   type DatosProfesorEditables,
   type NuevoProfesor,
   type Profesor,
+  type SyncIntervalSeconds,
 } from '@/context/ProfesoresContext';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  KeyboardAvoidingView,
-  Linking,
-  Modal,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+  Alert, FlatList, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput,
+  TouchableOpacity, View
 } from 'react-native';
 
 type ProfesorForm = {
@@ -35,13 +26,7 @@ type ProfesorForm = {
 };
 
 const emptyProfesorForm: ProfesorForm = {
-  name: '',
-  apellido: '',
-  Profesion: '',
-  headline: '',
-  location: '',
-  image: '',
-  about: '',
+  name: '',  apellido: '',  Profesion: '',  headline: '',  location: '',  image: '',  about: '',
 };
 
 function openExternalUrl(url: string) {
@@ -72,6 +57,15 @@ export default function Profes() {
     addProfesor,
     updateProfesor,
     deleteProfesor,
+    isOnline,
+    isSyncing,
+    pendingSyncCount,
+    newCloudProfesorIds,
+    markNewCloudProfesorAsViewed,
+    syncIntervalLoaded,
+    syncIntervalSeconds,
+    setSyncIntervalSeconds,
+    syncNow,
   } = useProfesores();
 
   const submitSearch = () => {
@@ -79,11 +73,21 @@ export default function Profes() {
     void fetchProfesores(search);
   };
 
+  const markProfessorAsViewed = (identity: string) => {
+    void markNewCloudProfesorAsViewed(identity).catch((viewError: unknown) => {
+      Alert.alert(
+        'No se pudo actualizar el indicador',
+        viewError instanceof Error ? viewError.message : 'Inténtalo de nuevo.'
+      );
+    });
+  };
+
   const updateProfesorForm = (field: keyof ProfesorForm, value: string) => {
     setProfesorForm((currentForm) => ({ ...currentForm, [field]: value }));
   };
 
   const openEditForm = (profesor: Profesor) => {
+    markProfessorAsViewed(getProfesorKey(profesor));
     setEditingProfesor(profesor);
     setProfesorForm({
       name: profesor.name,
@@ -182,9 +186,16 @@ export default function Profes() {
     );
   };
 
+
+
+
+
+
+
   const renderProfesorItem = ({ item }: { item: Profesor }) => {
     const profesorKey = getProfesorKey(item);
     const isExpanded = expandedProfesorId === profesorKey;
+    const isNewCloudProfesor = newCloudProfesorIds.includes(profesorKey);
     const hasAdditionalInfo = Boolean(
       item.about || item.experience?.length || item.education?.length || item.skills?.length ||
       item.contact?.linkedin || item.contact?.website
@@ -211,7 +222,11 @@ export default function Profes() {
               <Text style={styles.name}>
                 {item.name} {item.apellido}
               </Text>
-              <Text style={styles.badge}>ID: {profesorKey}</Text>
+              {isNewCloudProfesor && (
+                <View style={styles.newBadge}>
+                  <Text style={styles.newBadgeText}>NUEVO</Text>
+                </View>
+              )}
             </View>
             {item.headline && <Text style={styles.headline}>{item.headline}</Text>}
             <Text style={styles.profession}>{item.Profesion}</Text>
@@ -294,7 +309,10 @@ export default function Profes() {
         <View style={styles.cardActions}>
           {hasAdditionalInfo && (
             <TouchableOpacity
-              onPress={() => setExpandedProfesorId(isExpanded ? null : profesorKey)}
+              onPress={() => {
+                setExpandedProfesorId(isExpanded ? null : profesorKey);
+                if (!isExpanded) markProfessorAsViewed(profesorKey);
+              }}
               style={styles.expandButton}
               accessibilityRole="button"
               accessibilityState={{ expanded: isExpanded }}
@@ -331,16 +349,15 @@ export default function Profes() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Directorio de Profesores</Text>
-        <TouchableOpacity
-          onPress={() => router.replace('/(tabs)')}
-          style={styles.homeButton}
-          accessibilityRole="button"
-          accessibilityLabel="Volver al inicio"
-        >
-          <Text style={styles.homeButtonText}>Inicio</Text>
-        </TouchableOpacity>
+        <Image
+          source={require('@/assets/images/Card_inicial_UNINPAHU.jpg')}
+          style={styles.headerImage}
+          contentFit="cover"
+          accessibilityLabel="Directorio Profesores UNINPAHU"
+        />
+
       </View>
+      <Text style={styles.title}>Directorio Profesores UNINPAHU</Text>
       <View style={styles.createActionRow}>
         <TouchableOpacity
           onPress={() => setIsCreateModalVisible(true)}
@@ -356,10 +373,10 @@ export default function Profes() {
           value={search}
           onChangeText={setSearch}
           onSubmitEditing={submitSearch}
-          placeholder="ObjectId, nombre o profesión (vacío: mostrar todos)"
+          placeholder="Nombre o profesión (vacío: mostrar todos)"
           returnKeyType="search"
           style={styles.searchInput}
-          accessibilityLabel="Buscar profesores por ID, nombre, apellido o profesión"
+          accessibilityLabel="Buscar profesores por nombre o profesión"
         />
         <TouchableOpacity
           style={[styles.searchButton, loading && styles.searchButtonDisabled]}
@@ -371,6 +388,78 @@ export default function Profes() {
         </TouchableOpacity>
       </View>
 
+      {isOnline === false && (
+        <Text style={styles.connectionStatus}>
+          Sin conexión: los cambios se guardan en este dispositivo.
+        </Text>
+      )}
+      {isSyncing && <Text style={styles.connectionStatus}>Sincronizando cambios con la nube...</Text>}
+      {newCloudProfesorIds.length > 0 && (
+        <View
+          style={styles.newCloudAlert}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
+          <MaterialIcons name="campaign" size={20} color="#155724" />
+          <Text style={styles.newCloudAlertText}>
+            {newCloudProfesorIds.length === 1
+              ? 'Hay 1 nuevo docente pendiente de consulta, agregado directamente a la base de datos en la nube.'
+              : `Hay ${newCloudProfesorIds.length} nuevos docentes pendientes de consulta, agregados directamente a la base de datos en la nube.`}{' '}
+            Cada perfil está marcado como NUEVO.
+          </Text>
+        </View>
+      )}
+      <View style={styles.syncIntervalContainer}>
+        <Text style={styles.syncIntervalLabel}>Revisar cambios en la nube cada:</Text>
+        <View style={styles.syncIntervalOptions}>
+          {SYNC_INTERVAL_OPTIONS.map((interval: SyncIntervalSeconds) => (
+            <TouchableOpacity
+              key={interval}
+              onPress={() => void setSyncIntervalSeconds(interval).catch((settingError: unknown) =>
+                Alert.alert(
+                  'No se pudo cambiar la frecuencia',
+                  settingError instanceof Error ? settingError.message : 'Inténtalo de nuevo.'
+                )
+              )}
+              style={[
+                styles.syncIntervalButton,
+                syncIntervalSeconds === interval && styles.syncIntervalButtonSelected,
+                !syncIntervalLoaded && styles.searchButtonDisabled,
+              ]}
+              disabled={!syncIntervalLoaded}
+              accessibilityRole="button"
+              accessibilityState={{ selected: syncIntervalSeconds === interval }}
+              accessibilityLabel={`Sincronizar cada ${interval} segundos`}
+            >
+              <Text
+                style={[
+                  styles.syncIntervalButtonText,
+                  syncIntervalSeconds === interval && styles.syncIntervalButtonTextSelected,
+                ]}
+              >
+                {interval} s
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+      {pendingSyncCount > 0 && (
+        <TouchableOpacity
+          onPress={() => void syncNow().catch((syncError: unknown) =>
+            Alert.alert(
+              'No se pudo sincronizar',
+              syncError instanceof Error ? syncError.message : 'Inténtalo de nuevo.'
+            )
+          )}
+          style={styles.connectionStatusButton}
+          accessibilityRole="button"
+          accessibilityLabel={`Reintentar sincronización de ${pendingSyncCount} cambios`}
+        >
+          <Text style={styles.connectionStatus}>
+            {pendingSyncCount} cambio(s) pendiente(s) de sincronizar. Toca para reintentar.
+          </Text>
+        </TouchableOpacity>
+      )}
       {error && <Text style={styles.errorText}>{error}</Text>}
 
       <FlatList
@@ -507,7 +596,7 @@ export default function Profes() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f4f6f8',
+    backgroundColor: '#f5940c',
     paddingTop: 16,
   },
   centerContainer: {
@@ -522,6 +611,8 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
     flex: 1,
     marginRight: 12,
+    alignItems: 'center',
+    textAlign: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -585,7 +676,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 5,
     borderRadius: 8,
-    backgroundColor: '#fff0ef',
+    backgroundColor: '#fffbef',
     paddingHorizontal: 10,
   },
   deleteButtonText: { color: '#b42318', fontSize: 13, fontWeight: '600' },
@@ -615,6 +706,41 @@ const styles = StyleSheet.create({
   },
   searchButtonDisabled: { opacity: 0.6 },
   searchButtonText: { color: '#fff', fontWeight: '600' },
+  syncIntervalContainer: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    gap: 8,
+  },
+  syncIntervalLabel: {
+    color: '#26384a',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  syncIntervalOptions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  syncIntervalButton: {
+    minWidth: 64,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#0066cc',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+  },
+  syncIntervalButtonSelected: {
+    backgroundColor: '#0066cc',
+  },
+  syncIntervalButtonText: {
+    color: '#0066cc',
+    fontWeight: '600',
+  },
+  syncIntervalButtonTextSelected: {
+    color: '#fff',
+  },
   modalOverlay: {
     flex: 1,
     justifyContent: 'center',
@@ -757,7 +883,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   sectionTitle: {
-    color: '#26384a',
+    color: '#0e73d8',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -777,6 +903,46 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 12,
   },
+  connectionStatus: {
+    color: '#1d4e89',
+    fontSize: 13,
+    textAlign: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
+  connectionStatusButton: {
+    alignSelf: 'stretch',
+  },
+  newCloudAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#9ac7a3',
+    backgroundColor: '#e9f6ec',
+  },
+  newCloudAlertText: {
+    flex: 1,
+    color: '#155724',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  newBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 10,
+    backgroundColor: '#d32f2f',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  newBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   retryButton: {
     backgroundColor: '#0066cc',
     paddingHorizontal: 16,
@@ -793,4 +959,6 @@ const styles = StyleSheet.create({
     marginTop: 32,
     fontSize: 15,
   },
+    headerImage: { width: '100%', aspectRatio: 490 / 178, borderRadius: 8, marginTop: 14 },
+
 }); 

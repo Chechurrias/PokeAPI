@@ -47,6 +47,12 @@ En el entorno de Expo configura `EXPO_PUBLIC_PROFESORES_API_URL` con la URL púb
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
+### Profesores sin conexión
+
+En Android e iOS, la app mantiene una copia local de los profesores en SQLite y una cola persistente de operaciones pendientes. Cada profesor usa un UUID v4 como clave estable y `updated_at` para resolver conflictos; el servidor acepta una escritura solo cuando su marca de tiempo es más nueva. La cola se reintenta automáticamente mientras la app está activa, al recuperar la conexión y desde el aviso de cambios pendientes. Las eliminaciones se conservan como tombstones en la nube para que una sincronización posterior no restaure un registro borrado. Al abrir una base local antigua, la app migra sus IDs enteros a UUID y conserva las operaciones pendientes.
+
+La sincronización necesita `EXPO_PUBLIC_PROFESORES_API_URL`, `EXPO_PUBLIC_ADD_PROFESORES_API_URL`, `EXPO_PUBLIC_MOD_PROFESORES_API_URL` y `EXPO_PUBLIC_DEL_PROFESORES_API_URL`, documentadas arriba. La versión web sigue usando la API en línea y no ofrece la caché SQLite sin conexión.
+
 ## Get started
 
 1. Install dependencies

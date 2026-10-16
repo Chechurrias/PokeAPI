@@ -1,51 +1,10 @@
 import 'dotenv/config';
+import { Buffer } from 'node:buffer';
 import mongoose from 'mongoose';
 import { createServer } from 'node:http';
+import Profesor, { getProfesorDatabaseId, initializeProfesorCollection } from './profesorModel.js';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-
-const ExperienceSchema = new mongoose.Schema(
-  {
-    company: String,
-    role: String,
-    period: String,
-    description: String,
-  },
-  { _id: false }
-);
-
-const EducationSchema = new mongoose.Schema(
-  {
-    institution: String,
-    degree: String,
-    year: mongoose.Schema.Types.Mixed,
-  },
-  { _id: false }
-);
-
-const ContactSchema = new mongoose.Schema(
-  { linkedin: String, website: String },
-  { _id: false }
-);
-
-const ProfesorSchema = new mongoose.Schema(
-  {
-    name: String,
-    apellido: String,
-    headline: String,
-    Profesion: String,
-    image: String,
-    location: String,
-    about: String,
-    experience: [ExperienceSchema],
-    education: [EducationSchema],
-    skills: [String],
-    contact: ContactSchema,
-  },
-  { collection: 'datos' }
-);
-
-const Profesor = mongoose.model('Profesor', ProfesorSchema);
 
 const allowedOrigins = new Set(
   (process.env.ALLOWED_ORIGINS ?? 'http://localhost:8081,http://localhost:19006')
@@ -63,17 +22,37 @@ export class DelProfesorError extends Error {
   }
 }
 
-export async function deleteProfesor(ProfesorModel, rawId) {
-  if (!/^[\da-f]{24}$/i.test(rawId)) {
-    throw new DelProfesorError('El ID del profesor debe ser un ObjectId válido de MongoDB.');
+export async function deleteProfesor(ProfesorModel, rawId, payload = {}) {
+  if (!/^(?:[\da-f]{24}|[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12})$/i.test(rawId)) {
+    throw new DelProfesorError('El ID del profesor debe ser un ObjectId o UUID v4 válido.');
   }
 
-  const deletedProfesor = await ProfesorModel.findByIdAndDelete(rawId).lean();
-  if (!deletedProfesor) {
+  const databaseId = getProfesorDatabaseId(rawId);
+  const current = await ProfesorModel.findById(databaseId).lean();
+  if (!current) {
     throw new DelProfesorError(`No se encontró un profesor con el ID ${rawId}.`, 404);
   }
+  if (payload.uuid !== undefined && payload.uuid !== current.uuid) {
+    throw new DelProfesorError('El UUID no coincide con el profesor solicitado.', 409);
+  }
+  if (payload.uuid !== undefined &&
+    !/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(payload.uuid)) {
+    throw new DelProfesorError('El campo uuid debe ser un UUID v4 válido.');
+  }
+  const updatedAt = payload.updated_at === undefined
+    ? new Date(Math.max(Date.now(), new Date(current.updated_at).getTime() + 1))
+    : new Date(payload.updated_at);
+  if (Number.isNaN(updatedAt.getTime())) {
+    throw new DelProfesorError('La marca updated_at no es una fecha válida.');
+  }
+  if (updatedAt.getTime() <= new Date(current.updated_at).getTime()) return current;
 
-  return deletedProfesor;
+  const deletedProfesor = await ProfesorModel.findOneAndUpdate(
+    { _id: databaseId, updated_at: { $lt: updatedAt } },
+    { $set: { is_deleted: true, updated_at: updatedAt } },
+    { new: true, runValidators: true }
+  ).lean();
+  return deletedProfesor ?? ProfesorModel.findById(databaseId).lean();
 }
 
 function sendJson(response, statusCode, payload) {
@@ -133,7 +112,27 @@ async function handleRequest(request, response) {
   }
 
   try {
-    const profesor = await deleteProfesor(Profesor, routeMatch[1]);
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of request) {
+      size += chunk.length;
+      if (size > 64 * 1024) {
+        return sendJson(response, 413, { error: 'El cuerpo de la solicitud excede el tamaño permitido.' });
+      }
+      chunks.push(chunk);
+    }
+    let payload = {};
+    if (chunks.length > 0) {
+      try {
+        payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      } catch {
+        return sendJson(response, 400, { error: 'El cuerpo de la solicitud debe ser JSON válido.' });
+      }
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return sendJson(response, 400, { error: 'El cuerpo de la solicitud debe ser un objeto JSON.' });
+    }
+    const profesor = await deleteProfesor(Profesor, routeMatch[1], payload);
     return sendJson(response, 200, {
       message: `Se eliminó el profesor con ID ${profesor._id}.`,
       profesor,
@@ -144,6 +143,7 @@ async function handleRequest(request, response) {
     }
 
     console.error('Error al eliminar profesor:', error.message);
+    if (error.statusCode === 400) return sendJson(response, 400, { error: error.message });
     return sendJson(response, 500, { error: 'Error interno al eliminar el profesor.' });
   }
 }
@@ -168,6 +168,7 @@ async function startServer() {
   await mongoose.connect(mongoUri, {
     dbName: process.env.PROFESORES_MONGODB_DATABASE ?? 'Profesores',
   });
+  await initializeProfesorCollection(Profesor);
   server.listen(port, '0.0.0.0', () => {
     console.log(`Microservicio de eliminación de profesores escuchando en 0.0.0.0:${port}`);
   });
