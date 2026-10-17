@@ -23,8 +23,8 @@ const getLocalApiHost = () => {
 
 const POKEMON_API_URL = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
 
-// CORREGIDO: Apunta a Render en producción y a tu entorno local durante desarrollo
-const AI_API_URL = __DEV__
+// URL ajustada: Usa localhost en desarrollo local y Render en producción o web
+const AI_API_URL = __DEV__ && Platform.OS !== 'web'
   ? `http://${getLocalApiHost()}:3001`
   : 'https://pokeapi-ia.onrender.com';
 
@@ -35,10 +35,10 @@ const QUESTION_STOP_WORDS = new Set([
   'mostrar', 'explica', 'necesito', 'quiero', 'saber', 'informacion', 'aplicacion', 'pokemon',
   'tipo', 'tipos', 'habilidad', 'habilidades', 'agua', 'fuego', 'planta', 'hierba', 'electrico',
   'hielo', 'lucha', 'veneno', 'tierra', 'volador', 'psiquico', 'bicho', 'roca', 'fantasma',
-  'dragon', 'siniestro', 'acero', 'hada', 'normal', 'what', 'which', 'who', 'where', 'when',
-  'the', 'and', 'for', 'with', 'does', 'have', 'tell', 'about', 'explain', 'please', 'type',
-  'water', 'fire', 'grass', 'electric', 'ice', 'fighting', 'poison', 'ground', 'flying',
-  'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
+  'dragon', 'siniestro', 'acero', 'hada', 'normal', 'cuanto', 'pesa', 'mide', 'altura', 'peso',
+  'what', 'which', 'who', 'where', 'when', 'the', 'and', 'for', 'with', 'does', 'have', 'tell',
+  'about', 'explain', 'please', 'type', 'water', 'fire', 'grass', 'electric', 'ice', 'fighting',
+  'poison', 'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
 ]);
 
 type PokemonRecord = {
@@ -57,7 +57,7 @@ function getPokemonNameCandidates(question: string) {
       .toLowerCase()
       .split(/[^a-z0-9-]+/)
       .filter((word) => word.length > 2 && !QUESTION_STOP_WORDS.has(word))
-  )].slice(0, 8);
+  )].slice(0, 3);
 }
 
 async function findPokemonInExistingService(question: string): Promise<PokemonRecord | null> {
@@ -71,7 +71,7 @@ async function findPokemonInExistingService(question: string): Promise<PokemonRe
   const lookups = await Promise.allSettled(candidates.map(async (candidate) => {
     const response = await fetch(`${POKEMON_API_URL}/api/pokemon/${encodeURIComponent(candidate)}`);
     if (response.status === 400 || response.status === 404) return null;
-    if (!response.ok) throw new Error(`El servicio de Pokemon respondio ${response.status}.`);
+    if (!response.ok) throw new Error(`El servicio de Pokemon respondió ${response.status}.`);
     const pokemon = await response.json() as PokemonRecord;
     return typeof pokemon.name === 'string' && (typeof pokemon.id === 'number' || typeof pokemon.id === 'string')
       ? pokemon
@@ -119,7 +119,7 @@ export default function ConIAScreen() {
     try {
       const pokemon = await findPokemonInExistingService(cleanQuestion);
       if (!pokemon) {
-        setError('No encontré un Pokémon válido en la consulta. Escribe su nombre y vuelve a intentarlo; no se llamó a Gemini.');
+        setError('No encontré un Pokémon válido en la consulta. Escribe su nombre y vuelve a intentarlo.');
         return;
       }
 

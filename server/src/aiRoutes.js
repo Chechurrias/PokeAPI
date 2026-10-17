@@ -2,7 +2,6 @@ import { GoogleGenAI } from '@google/genai';
 import { Router } from 'express';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-// CORREGIDO: Usamos un modelo válido y existente de Gemini
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
 
 function getNames(values, selector) {
