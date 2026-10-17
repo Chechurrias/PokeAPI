@@ -21,11 +21,70 @@ const getLocalApiHost = () => {
   return Constants.expoConfig?.hostUri?.split(':')[0] ?? 'localhost';
 };
 
-const configuredAiApiUrl = process.env.EXPO_PUBLIC_AI_API_URL?.trim();
-const AI_API_URL = (
-  configuredAiApiUrl ||
-  (__DEV__ ? `http://${getLocalApiHost()}:3000` : undefined)
-)?.replace(/\/$/, '');
+const POKEMON_API_URL = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
+
+// CORREGIDO: Apunta a Render en producción y a tu entorno local durante desarrollo
+const AI_API_URL = __DEV__
+  ? `http://${getLocalApiHost()}:3001`
+  : 'https://pokeapi-ia.onrender.com';
+
+const QUESTION_STOP_WORDS = new Set([
+  'que', 'como', 'cual', 'cuales', 'quien', 'donde', 'cuando', 'por', 'para', 'con', 'sin',
+  'una', 'uno', 'unos', 'unas', 'los', 'las', 'del', 'desde', 'sobre', 'entre', 'hay', 'el',
+  'la', 'de', 'un', 'es', 'son', 'tiene', 'tienen', 'puede', 'pueden', 'dime', 'muestra',
+  'mostrar', 'explica', 'necesito', 'quiero', 'saber', 'informacion', 'aplicacion', 'pokemon',
+  'tipo', 'tipos', 'habilidad', 'habilidades', 'agua', 'fuego', 'planta', 'hierba', 'electrico',
+  'hielo', 'lucha', 'veneno', 'tierra', 'volador', 'psiquico', 'bicho', 'roca', 'fantasma',
+  'dragon', 'siniestro', 'acero', 'hada', 'normal', 'what', 'which', 'who', 'where', 'when',
+  'the', 'and', 'for', 'with', 'does', 'have', 'tell', 'about', 'explain', 'please', 'type',
+  'water', 'fire', 'grass', 'electric', 'ice', 'fighting', 'poison', 'ground', 'flying',
+  'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
+]);
+
+type PokemonRecord = {
+  id: string | number;
+  name: string;
+  types?: { type?: { name?: string } }[];
+  abilities?: { ability?: { name?: string } }[];
+  moves?: { move?: { name?: string } }[];
+};
+
+function getPokemonNameCandidates(question: string) {
+  return [...new Set(
+    question
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .split(/[^a-z0-9-]+/)
+      .filter((word) => word.length > 2 && !QUESTION_STOP_WORDS.has(word))
+  )].slice(0, 8);
+}
+
+async function findPokemonInExistingService(question: string): Promise<PokemonRecord | null> {
+  if (!POKEMON_API_URL) {
+    throw new Error('Falta configurar EXPO_PUBLIC_API_URL para validar el Pokemon.');
+  }
+
+  const candidates = getPokemonNameCandidates(question);
+  if (!candidates.length) return null;
+
+  const lookups = await Promise.allSettled(candidates.map(async (candidate) => {
+    const response = await fetch(`${POKEMON_API_URL}/api/pokemon/${encodeURIComponent(candidate)}`);
+    if (response.status === 400 || response.status === 404) return null;
+    if (!response.ok) throw new Error(`El servicio de Pokemon respondio ${response.status}.`);
+    const pokemon = await response.json() as PokemonRecord;
+    return typeof pokemon.name === 'string' && (typeof pokemon.id === 'number' || typeof pokemon.id === 'string')
+      ? pokemon
+      : null;
+  }));
+
+  const match = lookups.find((result) => result.status === 'fulfilled' && result.value !== null);
+  if (match?.status === 'fulfilled') return match.value;
+
+  const failedLookup = lookups.find((result) => result.status === 'rejected');
+  if (failedLookup?.status === 'rejected') throw failedLookup.reason;
+  return null;
+}
 
 type AskResponse = {
   answer?: string;
@@ -47,7 +106,7 @@ export default function ConIAScreen() {
       return;
     }
     if (!AI_API_URL) {
-      setError('Falta configurar EXPO_PUBLIC_AI_API_URL en el archivo .env.');
+      setError('El asistente no está configurado correctamente.');
       return;
     }
 
@@ -58,10 +117,16 @@ export default function ConIAScreen() {
     setSources([]);
 
     try {
+      const pokemon = await findPokemonInExistingService(cleanQuestion);
+      if (!pokemon) {
+        setError('No encontré un Pokémon válido en la consulta. Escribe su nombre y vuelve a intentarlo; no se llamó a Gemini.');
+        return;
+      }
+
       const response = await fetch(`${AI_API_URL}/api/ai/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: cleanQuestion }),
+        body: JSON.stringify({ question: cleanQuestion, pokemon }),
       });
       const data = await response.json().catch(() => null) as AskResponse | null;
 
@@ -97,7 +162,7 @@ export default function ConIAScreen() {
         <Text style={styles.eyebrow}>ASISTENTE DE LA APP</Text>
         <Text style={styles.title}>¿Qué quieres saber?</Text>
         <Text style={styles.subtitle}>
-          Pregunta sobre Pokémon, Rick y Morty o el directorio de profesores.
+          Pregunta sobre un Pokémon que exista en la base de datos de la app.
         </Text>
       </View>
 
@@ -107,7 +172,7 @@ export default function ConIAScreen() {
           value={question}
           onChangeText={setQuestion}
           style={styles.input}
-          placeholder="Ej.: ¿Qué Pokémon tiene tipo fuego?"
+          placeholder="Ej.: ¿Qué tipo tiene Pikachu?"
           placeholderTextColor="#84928a"
           multiline
           maxLength={500}
@@ -164,7 +229,7 @@ export default function ConIAScreen() {
         <View style={styles.hint}>
           <MaterialIcons name="info-outline" size={18} color="#63746b" />
           <Text style={styles.hintText}>
-            El asistente responderá usando la información disponible en los catálogos de la app.
+            Primero se valida el nombre del Pokémon; Gemini solo recibe la pregunta si existe.
           </Text>
         </View>
       )}

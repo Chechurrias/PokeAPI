@@ -10,6 +10,7 @@
     "dev": "node --watch src/Profesores.js",
     "start": "node src/Profesores.js",
     "start:pokemon": "node src/server.js",
+    "start:ai-local": "node src/aiServer.js",
     "start:profesores": "node src/Profesores.js",
     "start:add-profesores": "node src/addProfes.js",
     "start:mod-profesores": "node src/modProfes.js",
