@@ -65,8 +65,12 @@ export function createAiRouter() {
       ].join(' ');
 
       const gemini = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+
+      // Aseguramos que el modelo no tenga prefijos extraños y sea compatible
+      const modelName = GEMINI_MODEL.startsWith('models/') ? GEMINI_MODEL.replace('models/', '') : GEMINI_MODEL;
+
       const result = await gemini.models.generateContent({
-        model: GEMINI_MODEL,
+        model: modelName,
         contents: `QUESTION:\n${question}\n\nVALIDATED POKEMON RECORD:\n${JSON.stringify({ sourceId, ...pokemon })}`,
         config: {
           systemInstruction: instructions,
