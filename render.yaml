@@ -12,6 +12,14 @@ services:
         value: 3000
       - key: DATABASE_URL
         sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
+      - key: AI_RICK_API_URL
+        value: https://rickandmorty-api-python.onrender.com
+      - key: AI_PROFESORES_API_URL
+        value: https://pokeapi-profes.onrender.com
       - key: ALLOWED_ORIGINS
         sync: false
   - type: web

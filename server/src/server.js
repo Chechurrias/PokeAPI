@@ -4,6 +4,7 @@ import express from 'express';
 import pg from 'pg';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
+import { createAiRouter } from './aiRoutes.js';
 
 const { Pool } = pg;
 const app = express();
@@ -74,6 +75,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+app.use('/api/ai', createAiRouter({ pool }));
 
 app.get('/', (_request, response) => {
   response.type('html').send(`

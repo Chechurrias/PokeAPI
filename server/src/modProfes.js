@@ -91,7 +91,7 @@ export async function modifyProfesor(ProfesorModel, rawId, payload) {
     { new: true, runValidators: true }
   ).lean();
 
-  return profesor ?? ProfesorModel.findById(databaseId).lean();
+  return profesor ?? (await ProfesorModel.findById(databaseId).lean());
 }
 
 function sendJson(response, statusCode, payload) {

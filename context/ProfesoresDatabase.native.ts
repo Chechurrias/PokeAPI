@@ -450,14 +450,14 @@ export async function markProfesorUpdated(localId: string, profesor: Profesor) {
       profesor.updated_at,
       localId
     );
-    await database.runAsync('DELETE FROM profesores_outbox WHERE local_uuid = ?', localId);
+    await database.runAsync('DELETE FROM profesores_outbox WHERE local_id = ?', localId);
   });
 }
 
 export async function markProfesorDeleted(localId: string) {
   const database = await getDatabase();
   await database.withTransactionAsync(async () => {
-    await database.runAsync('DELETE FROM profesores_outbox WHERE local_uuid = ?', localId);
+    await database.runAsync('DELETE FROM profesores_outbox WHERE local_id = ?', localId);
     await database.runAsync('DELETE FROM profesores WHERE uuid = ?', localId);
   });
 }

@@ -52,7 +52,7 @@ export async function deleteProfesor(ProfesorModel, rawId, payload = {}) {
     { $set: { is_deleted: true, updated_at: updatedAt } },
     { new: true, runValidators: true }
   ).lean();
-  return deletedProfesor ?? ProfesorModel.findById(databaseId).lean();
+  return deletedProfesor ?? (await ProfesorModel.findById(databaseId).lean());
 }
 
 function sendJson(response, statusCode, payload) {

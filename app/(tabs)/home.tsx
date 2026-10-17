@@ -28,6 +28,16 @@ const destinations = [
     icon: 'school' as const,
     color: '#f3e2c9',
   },
+
+  {
+    title: 'Consultas IA',
+    subtitle: 'Preguntas AI sobre cualquier tema de esta APP',
+    image: 'https://www.iebschool.com/hub/wp-content/uploads/2024/11/image-38.jpg',
+    route: '/ConIA',
+    icon: 'smart-toy' as const,
+    color: '#f3e2c9',
+  },
+
 ] as const;
 
 export default function HomeScreen() {

@@ -30,6 +30,11 @@ function infoPokeAPI({ color }: Readonly<{ color: ColorValue }>) {
 function HomeTabIcon({ color }: Readonly<{ color: ColorValue }>) {
   return <MaterialIcons size={25} name="home" color={color} />;
 }
+function ConsultasIATabIcon({ color }: Readonly<{ color: ColorValue }>) {
+  return <MaterialIcons size={25} name="smart-toy" color={color} />;
+}
+
+// --- FIN DE COMPONENTES AUXILIARES ---
 
 // --- COMPONENTE PRINCIPAL DE NAVEGACIÓN ---
 
@@ -45,6 +50,7 @@ export default function TabLayout() {
   const isProfesSection = pathname.endsWith('/Profes');
   // PokéAPI usa las rutas reales index (/) y explore (/explore).
   const isPokeSection = pathname === '/' || pathname.endsWith('/explore');
+  const isConIASection = pathname.endsWith('/ConIA');
 
 
   return (
@@ -79,7 +85,7 @@ export default function TabLayout() {
             options={{
               title: 'PokeAPI',
               tabBarIcon: PokeAPITabIcon,
-              href: isRickSection || isProfesSection ? null : undefined,
+              href: isRickSection || isProfesSection || isConIASection ? null : undefined,
             }}
           />
 
@@ -89,7 +95,7 @@ export default function TabLayout() {
             options={{
               title: 'info PokeAPI',
               tabBarIcon: infoPokeAPI,
-              href: isRickSection || isProfesSection ? null : undefined,
+              href: isRickSection || isProfesSection || isConIASection ? null : undefined,
             }}
           />
 
@@ -99,7 +105,7 @@ export default function TabLayout() {
             options={{
               title: 'Rick y Morty',
               tabBarIcon: RickyMortyTabIcon,
-              href: isProfesSection || isPokeSection ? null : undefined,
+              href: isProfesSection || isPokeSection || isConIASection  ? null : undefined,
             }}
                     />
 
@@ -109,7 +115,7 @@ export default function TabLayout() {
             options={{
               title: 'Info Rick',
               tabBarIcon: InfoRickTabIcon,
-              href: isProfesSection || isPokeSection ? null : undefined,
+              href: isProfesSection || isPokeSection || isConIASection  ? null : undefined,
             }}
           />
 
@@ -120,10 +126,22 @@ export default function TabLayout() {
               title: 'Profesores',
               tabBarIcon: ProfesoresTabIcon,
               // Oculta Profesores dentro de Rick y Morty o de PokéAPI.
-              href: isRickSection || isPokeSection ? null : undefined,
+              href: isRickSection || isPokeSection || isConIASection ? null : undefined,
+                     
             }}
-          />
+            />
+          {/* Pantalla de consultas con IA */}
+          <Tabs.Screen
+            name="ConIA"
+            options={{
+              title: 'Consultas IA',
+              tabBarIcon: ConsultasIATabIcon,
+              // Oculta Consultas IA dentro de Rick y Morty o de PokéAPI.
+              href: isRickSection || isPokeSection || isProfesSection ? null : undefined,
+            }}
+            />
 
+          
 
         </Tabs>
       </ProfesoresProvider>

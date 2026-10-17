@@ -30,7 +30,26 @@ const emptyProfesorForm: ProfesorForm = {
 
 function openExternalUrl(url: string) {
   if (!/^https?:\/\//i.test(url)) return;
-  void Linking.openURL(url).catch(() => Alert.alert('No se pudo abrir el enlace.'));
+  void Linking.openURL(url).catch(() => showMessage('No se pudo abrir el enlace.'));
+}
+
+function showMessage(title: string, message?: string) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    window.alert([title, message].filter(Boolean).join('\n\n'));
+    return;
+  }
+  Alert.alert(title, message);
+}
+
+function confirmAction(title: string, message: string, onConfirm: () => void) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    if (window.confirm(`${title}\n\n${message}`)) onConfirm();
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: 'Cancelar', style: 'cancel' },
+    { text: 'Eliminar', style: 'destructive', onPress: onConfirm },
+  ]);
 }
 
 function getProfesorKey(item: Profesor) {
@@ -73,7 +92,7 @@ export default function Profes() {
 
   const markProfessorAsViewed = (identity: string) => {
     void markNewCloudProfesorAsViewed(identity).catch((viewError: unknown) => {
-      Alert.alert(
+      showMessage(
         'No se pudo actualizar el indicador',
         viewError instanceof Error ? viewError.message : 'Inténtalo de nuevo.'
       );
@@ -106,7 +125,7 @@ export default function Profes() {
 
   const submitProfesorForm = async () => {
     if (!profesorForm.name.trim() || !profesorForm.apellido.trim() || !profesorForm.Profesion.trim()) {
-      Alert.alert('Faltan datos', 'Nombre, apellido y profesión son obligatorios.');
+      showMessage('Faltan datos', 'Nombre, apellido y profesión son obligatorios.');
       return;
     }
 
@@ -125,7 +144,7 @@ export default function Profes() {
       if (editingProfesor) {
         await updateProfesor(getProfesorKey(editingProfesor), editData);
         closeForm();
-        Alert.alert('Profesor actualizado', 'La información se modificó correctamente.');
+        showMessage('Profesor actualizado', 'La información se modificó correctamente.');
       } else {
         const newProfesor: NuevoProfesor = {
           name: editData.name,
@@ -141,46 +160,39 @@ export default function Profes() {
         setSearch('');
         setHasSearched(true);
         setExpandedProfesorId(null);
-        Alert.alert('Profesor creado', 'El profesor se agregó correctamente.');
+        showMessage('Profesor creado', 'El profesor se agregó correctamente.');
       }
     } catch (saveError) {
       const message =
         saveError instanceof Error ? saveError.message : 'Ocurrió un error al guardar el profesor.';
-      Alert.alert('No se pudo guardar el profesor', message);
+      showMessage('No se pudo guardar el profesor', message);
     } finally {
       setIsCreating(false);
     }
   };
 
   const confirmDeleteProfesor = (profesor: Profesor) => {
-    Alert.alert(
+    confirmAction(
       'Eliminar profesor',
       `¿Seguro que deseas eliminar a ${profesor.name} ${profesor.apellido}? Esta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: () => {
-            const profesorKey = getProfesorKey(profesor);
-            setDeletingProfesorId(profesorKey);
-            void deleteProfesor(profesorKey)
-              .then(() => {
-                if (expandedProfesorId === getProfesorKey(profesor)) {
-                  setExpandedProfesorId(null);
-                }
-              })
-              .catch((deleteError: unknown) => {
-                const message =
-                  deleteError instanceof Error
-                    ? deleteError.message
-                    : 'Ocurrió un error al eliminar el profesor.';
-                Alert.alert('No se pudo eliminar el profesor', message);
-              })
-              .finally(() => setDeletingProfesorId(null));
-          },
-        },
-      ]
+      () => {
+        const profesorKey = getProfesorKey(profesor);
+        setDeletingProfesorId(profesorKey);
+        void deleteProfesor(profesorKey)
+          .then(() => {
+            if (expandedProfesorId === profesorKey) {
+              setExpandedProfesorId(null);
+            }
+          })
+          .catch((deleteError: unknown) => {
+            const message =
+              deleteError instanceof Error
+                ? deleteError.message
+                : 'Ocurrió un error al eliminar el profesor.';
+            showMessage('No se pudo eliminar el profesor', message);
+          })
+          .finally(() => setDeletingProfesorId(null));
+      }
     );
   };
 
@@ -414,7 +426,7 @@ export default function Profes() {
             <TouchableOpacity
               key={interval}
               onPress={() => void setSyncIntervalSeconds(interval).catch((settingError: unknown) =>
-                Alert.alert(
+                showMessage(
                   'No se pudo cambiar la frecuencia',
                   settingError instanceof Error ? settingError.message : 'Inténtalo de nuevo.'
                 )
@@ -435,7 +447,7 @@ export default function Profes() {
                   syncIntervalSeconds === interval && styles.syncIntervalButtonTextSelected,
                 ]}
               >
-                {interval} s
+                {interval} Seg.
               </Text>
             </TouchableOpacity>
           ))}
@@ -444,7 +456,7 @@ export default function Profes() {
       {pendingSyncCount > 0 && (
         <TouchableOpacity
           onPress={() => void syncNow().catch((syncError: unknown) =>
-            Alert.alert(
+            showMessage(
               'No se pudo sincronizar',
               syncError instanceof Error ? syncError.message : 'Inténtalo de nuevo.'
             )
@@ -501,11 +513,6 @@ export default function Profes() {
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.formContent}
             >
-              {!editingProfesor && (
-                <>
-                </>
-              )}
-
               <Text style={styles.fieldLabel}>Nombre *</Text>
               <TextInput
                 value={profesorForm.name}
@@ -932,7 +939,7 @@ const styles = StyleSheet.create({
   newBadge: {
     alignSelf: 'flex-start',
     borderRadius: 10,
-    backgroundColor: '#d32f2f',
+    backgroundColor: '#2fd33f',
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
