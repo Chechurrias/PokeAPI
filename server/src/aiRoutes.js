@@ -1,9 +1,9 @@
-﻿import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { Router } from 'express';
 
 // Validar variables de entorno requeridas al cargar el módulo
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.8-flash';
 
 if (!GEMINI_API_KEY) {
   console.warn('ADVERTENCIA: GEMINI_API_KEY no estÃ¡ configurada. El asistente de PokÃ©mon no funcionarÃ¡.');
@@ -185,11 +185,13 @@ export function createAiRouter({ pool }) {
       ].join(' ');
 
       const gemini = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+
       const result = await gemini.models.generateContent({
         model: GEMINI_MODEL,
-        systemInstruction: instructions,
-        contents: `PREGUNTA:\n${question}\n\nCONTEXTO (registros de PokÃ©mon de la base de datos de la app):\n${JSON.stringify(records)}`,
+        contents: `PREGUNTA:\n${question}\n\nCONTEXTO (registros de Pokémon de la base de datos de la app):\n${JSON.stringify(records)}`,
         config: {
+          // systemInstruction debe ir obligatoriamente dentro de config
+          systemInstruction: instructions,
           responseMimeType: 'application/json',
           responseSchema: {
             type: 'object',
