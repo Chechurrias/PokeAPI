@@ -12,15 +12,21 @@ const serviceBaseUrl = process.env.RENDER_EXTERNAL_URL || '/';
 const databaseUrl = process.env.DATABASE_URL;
 
 if (!databaseUrl) {
-  throw new Error('DATABASE_URL no está configurado. Define la variable de entorno antes de iniciar el servidor.');
+  throw new Error(
+    'DATABASE_URL no está configurado. Define la variable de entorno antes de iniciar el servidor.'
+  );
 }
 
 const allowedOrigins = new Set(
-  (process.env.ALLOWED_ORIGINS ?? '').split(',').map((value) => value.trim()).filter(Boolean)
+  (process.env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
 );
 
 const isAllowedOrigin = (origin) => {
   if (!origin) return true;
+
   if (allowedOrigins.has(origin)) return true;
 
   const patterns = [
@@ -48,12 +54,15 @@ const swaggerOptions = {
     info: {
       title: 'Pokemon API Microservice',
       version: '1.0.0',
-      description: 'Microservicio para consultar Pokémon almacenados en Supabase PostgreSQL.',
+      description:
+        'Microservicio para consultar Pokémon almacenados en Supabase PostgreSQL.',
     },
     servers: [
       {
         url: serviceBaseUrl,
-        description: process.env.RENDER_EXTERNAL_URL ? 'Microservicio desplegado en Render' : 'Origen actual',
+        description: process.env.RENDER_EXTERNAL_URL
+          ? 'Microservicio desplegado en Render'
+          : 'Origen actual',
       },
     ],
   },
@@ -63,17 +72,22 @@ const swaggerOptions = {
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 
 app.disable('x-powered-by');
-app.use(cors({
-  origin: (origin, callback) => {
-    if (isAllowedOrigin(origin)) {
-      return callback(null, true);
-    }
 
-    return callback(new Error('Origen no permitido por CORS.'));
-  },
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error('Origen no permitido por CORS.'));
+    },
+    credentials: true,
+  })
+);
+
 app.use(express.json());
+
 app.get('/', (_request, response) => {
   response.type('html').send(`
     <!doctype html>
@@ -120,10 +134,21 @@ app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get('/health', async (_request, response) => {
   try {
     const result = await pool.query('SELECT 1');
-    return response.json({ ok: true, service: 'pokemon-api', db: result.rowCount > 0 });
+
+    return response.json({
+      ok: true,
+      service: 'pokemon-api',
+      db: result.rowCount > 0,
+    });
   } catch (error) {
     console.error('Error en la base de datos:', error);
-    return response.status(500).json({ ok: false, service: 'pokemon-api', db: false, error: error.message });
+
+    return response.status(500).json({
+      ok: false,
+      service: 'pokemon-api',
+      db: false,
+      error: error.message,
+    });
   }
 });
 
@@ -151,41 +176,64 @@ app.get('/health', async (_request, response) => {
  */
 app.get('/api/pokemon/:name', async (request, response) => {
   const rawName = request.params.name?.trim();
-  const normalizedName = rawName?.toLowerCase();
+
+  const normalizedName = rawName
+    ?.toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 
   if (!normalizedName || !/^[a-z0-9-\s]+$/.test(normalizedName)) {
-    return response.status(400).json({ error: 'El nombre del Pokémon no es válido.' });
+    return response.status(400).json({
+      error: 'El nombre del Pokémon no es válido.',
+    });
   }
 
   try {
-    let result;
     const query = `
       SELECT id, pokedex_id, name, type_primary, type_secondary, sprite_url
       FROM %TABLE%
       WHERE LOWER(name) = $1 OR LOWER(name) = $2
       LIMIT 1;
     `;
-    const params = [normalizedName, normalizedName.replaceAll('-', ' ')];
 
-    // Intenta buscar primero en 'pokemons' y si no existe prueba en 'pokemon'
+    const params = [
+      normalizedName,
+      normalizedName.replaceAll('-', ' '),
+    ];
+
+    let result;
+
     try {
-      result = await pool.query(query.replace('%TABLE%', 'pokemons'), params);
-    } catch (err) {
-      if (err.code === '42P01') { // Causal: Relation does not exist
-        result = await pool.query(query.replace('%TABLE%', 'pokemon'), params);
+      result = await pool.query(
+        query.replace('%TABLE%', 'pokemons'),
+        params
+      );
+    } catch (error) {
+      if (error.code === '42P01') {
+        result = await pool.query(
+          query.replace('%TABLE%', 'pokemon'),
+          params
+        );
       } else {
-        throw err;
+        throw error;
       }
     }
 
     if (result.rowCount === 0) {
-      return response.status(404).json({ error: 'Pokémon no encontrado.' });
+      return response.status(404).json({
+        error: 'Pokémon no encontrado.',
+      });
     }
 
     const pokemon = result.rows[0];
+
     const types = [
-      ...(pokemon.type_primary ? [{ type: { name: pokemon.type_primary.toLowerCase() } }] : []),
-      ...(pokemon.type_secondary ? [{ type: { name: pokemon.type_secondary.toLowerCase() } }] : []),
+      ...(pokemon.type_primary
+        ? [{ type: { name: pokemon.type_primary.toLowerCase() } }]
+        : []),
+      ...(pokemon.type_secondary
+        ? [{ type: { name: pokemon.type_secondary.toLowerCase() } }]
+        : []),
     ];
 
     return response.json({
@@ -208,6 +256,7 @@ app.get('/api/pokemon/:name', async (request, response) => {
     });
   } catch (error) {
     console.error('Error consultando Supabase:', error);
+
     return response.status(500).json({
       error: 'Error en el servidor al consultar la base de datos.',
       details: error.message,

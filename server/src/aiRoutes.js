@@ -1,80 +1,116 @@
 import { GoogleGenAI } from '@google/genai';
 import { Router } from 'express';
-import fetch from 'node-fetch'; // Asegúrate de tener node-fetch o usar fetch nativo de Node 18+
+import fetch from 'node-fetch';
+
+const POKEMON_NAME_REGEX = /^[a-z0-9-]{1,40}$/;
+
+const POKEMON_API_BASE_URL =
+  process.env.POKEMON_API_BASE_URL ?? 'https://pokeapi-zz36.onrender.com';
+
+function normalizePokemonName(value) {
+  return value
+    ?.trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '-');
+}
 
 export function createAiRouter() {
   const router = Router();
 
+  const gemini = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY,
+  });
+
   router.post('/ask', async (request, response) => {
-    const question = typeof request.body?.question === 'string' ? request.body.question.trim() : '';
+    const question =
+      typeof request.body?.question === 'string'
+        ? request.body.question.trim()
+        : '';
+
+    const rawPokemonName =
+      typeof request.body?.pokemonName === 'string'
+        ? request.body.pokemonName
+        : '';
+
     if (!question) {
-      return response.status(400).json({ error: 'Escribe una pregunta.' });
+      return response.status(400).json({
+        error: 'Escribe una pregunta.',
+      });
     }
+
     if (question.length > 500) {
-      return response.status(400).json({ error: 'La pregunta no puede superar los 500 caracteres.' });
+      return response.status(400).json({
+        error: 'La pregunta no puede superar los 500 caracteres.',
+      });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    const rawModel = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
+    if (!process.env.GEMINI_API_KEY) {
+      return response.status(503).json({
+        error: 'El asistente no tiene configurada la clave en el servidor.',
+      });
+    }
 
-    if (!apiKey) {
-      return response.status(503).json({ error: 'El asistente no tiene configurada la clave en el servidor.' });
+    const pokemonName = normalizePokemonName(rawPokemonName);
+
+    if (!pokemonName || !POKEMON_NAME_REGEX.test(pokemonName)) {
+      return response.status(400).json({
+        error: 'Escribe un nombre de Pokémon válido.',
+      });
     }
 
     try {
-      // 1. EXTRAER EL POKÉMON DE LA PREGUNTA EN EL BACKEND
-      const cleanText = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[¿?¡!,.]/g, '');
-      const words = cleanText.split(/\s+/);
-      const stopWords = ['el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'que', 'cual', 'es', 'tipo', 'sobre', 'numero', 'color', 'caracteristicas'];
-      const filtered = words.filter(w => w.length > 2 && !stopWords.includes(w));
-      const pokemonName = filtered.length > 0 ? filtered[filtered.length - 1] : words[words.length - 1];
+      const pokemonServiceUrl =
+        `${POKEMON_API_BASE_URL}/api/pokemon/` +
+        encodeURIComponent(pokemonName);
 
-      if (!pokemonName) {
-        return response.status(400).json({ error: 'No se pudo identificar un Pokémon en la pregunta.' });
-      }
+      const checkResponse = await fetch(pokemonServiceUrl, {
+        signal: AbortSignal.timeout(8000),
+      });
 
-      // 2. CONSULTAR AL SERVICIO DE POKÉMON (ej. pokeapi-zz36.onrender.com)
-      const pokemonServiceUrl = `https://pokeapi-zz36.onrender.com/api/pokemon/${encodeURIComponent(pokemonName)}`;
-      console.log(`[AI SERVICE] Consultando servicio de Pokémon: ${pokemonServiceUrl}`);
-
-      const checkResponse = await fetch(pokemonServiceUrl);
-
-      // 3. SI NO EXISTE EN LA BASE DE DATOS, RETORNAMOS EL ERROR DE AHORRO Y NO LLAMAMOS A GEMINI
       if (checkResponse.status === 404) {
-        console.log(`[AI SERVICE] El Pokémon "${pokemonName}" no existe. Ahorrando consulta a Gemini.`);
         return response.status(404).json({
-          error: 'no existe en la base de datos de la app. Ahorramos la consulta a Gemini.'
+          error: 'El Pokémon no existe en la base de datos de la aplicación.',
         });
       }
 
       if (!checkResponse.ok) {
-        return response.status(502).json({ error: 'Error al verificar el Pokémon en el servicio de datos.' });
+        return response.status(502).json({
+          error: 'No fue posible verificar el Pokémon en el servicio de datos.',
+        });
       }
 
-      console.log(`[AI SERVICE] Pokémon "${pokemonName}" encontrado en la BD. Procediendo a consultar a Gemini...`);
-
-      // 4. SI EXISTE, INVOCAMOS A GEMINI
-      const gemini = new GoogleGenAI({ apiKey });
-      const modelName = rawModel.replace(/^models\//, '');
+      const modelName = (
+        process.env.GEMINI_MODEL ?? 'gemini-1.5-flash'
+      ).replace(/^models\//, '');
 
       const result = await gemini.models.generateContent({
         model: modelName,
         contents: question,
         config: {
-          systemInstruction: 'Eres un asistente experto en Pokémon y cultura pop. Responde de forma clara, directa, amable y detallada.',
+          systemInstruction:
+            'Eres un asistente experto en Pokémon y cultura pop. ' +
+            'Responde de forma clara, directa, amable y detallada.',
           maxOutputTokens: 800,
         },
       });
 
-      const textResponse = result.text ?? 'No se pudo generar una respuesta.';
-
       return response.json({
-        answer: textResponse,
+        answer: result.text ?? 'No se pudo generar una respuesta.',
         sources: [],
       });
     } catch (error) {
-      console.error('Error detallado en la ruta de IA:', error);
-      return response.status(502).json({ error: error instanceof Error ? error.message : 'Error interno al procesar la solicitud.' });
+      console.error('Error en /api/ai/ask:', error);
+
+      const isTimeout =
+        error?.name === 'AbortError' || error?.name === 'TimeoutError';
+
+      return response.status(isTimeout ? 504 : 502).json({
+        error: isTimeout
+          ? 'El servicio de datos tardó demasiado en responder.'
+          : 'Error interno al procesar la solicitud.',
+      });
     }
   });
 
