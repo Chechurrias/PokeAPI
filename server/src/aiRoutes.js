@@ -1,15 +1,15 @@
 import { GoogleGenAI } from '@google/genai';
 import { Router } from 'express';
-import fetch from 'node-fetch';
 
-const POKEMON_NAME_REGEX = /^[a-z0-9-]{1,40}$/;
-
-const POKEMON_API_BASE_URL =
-  process.env.POKEMON_API_BASE_URL ?? 'https://pokeapi-zz36.onrender.com';
+const POKEMON_NAME_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function normalizePokemonName(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
   return value
-    ?.trim()
+    .trim()
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -19,9 +19,8 @@ function normalizePokemonName(value) {
 export function createAiRouter() {
   const router = Router();
 
-  const gemini = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-  });
+  // Se inicializa después de comprobar la configuración.
+  let gemini;
 
   router.post('/ask', async (request, response) => {
     const question =
@@ -29,10 +28,9 @@ export function createAiRouter() {
         ? request.body.question.trim()
         : '';
 
-    const rawPokemonName =
-      typeof request.body?.pokemonName === 'string'
-        ? request.body.pokemonName
-        : '';
+    const pokemonName = normalizePokemonName(
+      request.body?.pokemonName
+    );
 
     if (!question) {
       return response.status(400).json({
@@ -46,70 +44,129 @@ export function createAiRouter() {
       });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return response.status(503).json({
-        error: 'El asistente no tiene configurada la clave en el servidor.',
-      });
-    }
-
-    const pokemonName = normalizePokemonName(rawPokemonName);
-
-    if (!pokemonName || !POKEMON_NAME_REGEX.test(pokemonName)) {
+    if (
+      !pokemonName ||
+      pokemonName.length > 80 ||
+      !POKEMON_NAME_REGEX.test(pokemonName)
+    ) {
       return response.status(400).json({
         error: 'Escribe un nombre de Pokémon válido.',
       });
     }
 
-    try {
-      const pokemonServiceUrl =
-        `${POKEMON_API_BASE_URL}/api/pokemon/` +
-        encodeURIComponent(pokemonName);
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
 
-      const checkResponse = await fetch(pokemonServiceUrl, {
-        signal: AbortSignal.timeout(8000),
+    // Conserva el modelo configurado y el fallback de tu código original.
+    const modelName = (
+      process.env.GEMINI_MODEL ?? 'gemini-1.5-flash'
+    )
+      .trim()
+      .replace(/^models\//, '');
+
+    if (!apiKey) {
+      return response.status(503).json({
+        error:
+          'El asistente no tiene configurada la clave en el servidor.',
       });
+    }
 
-      if (checkResponse.status === 404) {
-        return response.status(404).json({
-          error: 'El Pokémon no existe en la base de datos de la aplicación.',
-        });
+    if (!modelName) {
+      return response.status(503).json({
+        error: 'El modelo del asistente no está configurado.',
+      });
+    }
+
+    try {
+      if (!gemini) {
+        gemini = new GoogleGenAI({ apiKey });
       }
 
-      if (!checkResponse.ok) {
-        return response.status(502).json({
-          error: 'No fue posible verificar el Pokémon en el servicio de datos.',
-        });
-      }
+      // El nombre no se queda solamente en el JSON del frontend:
+      // se incorpora al contenido que realmente recibe Gemini.
+      const fullQuestion = [
+        `Pokémon seleccionado: ${pokemonName}`,
+        '',
+        `Pregunta del usuario: ${question}`,
+        '',
+        'Responde la pregunta tomando como referencia al Pokémon seleccionado.',
+      ].join('\n');
 
-      const modelName = (
-        process.env.GEMINI_MODEL ?? 'gemini-1.5-flash'
-      ).replace(/^models\//, '');
+      console.log('[IA] Iniciando consulta:', {
+        model: modelName,
+        pokemonName,
+        questionLength: question.length,
+      });
 
       const result = await gemini.models.generateContent({
         model: modelName,
-        contents: question,
+        contents: fullQuestion,
         config: {
-          systemInstruction:
-            'Eres un asistente experto en Pokémon y cultura pop. ' +
-            'Responde de forma clara, directa, amable y detallada.',
+          systemInstruction: [
+            'Eres un asistente especializado en Pokémon y solo respondes preguntas relacionadas con ellos.',
+            'Responde en español de forma clara y directa y solo respondes preguntas relacionadas con ellos.',
+            'El mensaje incluye un Pokémon seleccionado y una pregunta.',
+            'Cuando la pregunta diga "él", "su", "es" o no repita el nombre,',
+            'interpreta que se refiere al Pokémon seleccionado.',
+            'No solicites nuevamente el nombre si ya está indicado.',
+            'Si desconoces un dato, dilo sin inventarlo.',
+          ].join(' '),
           maxOutputTokens: 800,
         },
       });
 
+      const answer =
+        typeof result.text === 'string'
+          ? result.text.trim()
+          : '';
+
+      if (!answer) {
+        console.warn('[IA] Respuesta sin texto:', {
+          pokemonName,
+          finishReason: result.candidates?.[0]?.finishReason,
+          promptFeedback: result.promptFeedback,
+        });
+
+        return response.status(502).json({
+          error:
+            'El asistente no devolvió una respuesta de texto. Inténtalo nuevamente.',
+        });
+      }
+
       return response.json({
-        answer: result.text ?? 'No se pudo generar una respuesta.',
+        answer,
+        pokemon: pokemonName,
         sources: [],
       });
     } catch (error) {
-      console.error('Error en /api/ai/ask:', error);
+      console.error('[IA] Error completo:', error);
 
-      const isTimeout =
-        error?.name === 'AbortError' || error?.name === 'TimeoutError';
+      console.error('[IA] Detalle del error:', {
+        name: error?.name,
+        message: error?.message,
+        status: error?.status,
+        code: error?.code,
+        stack: error?.stack,
+      });
 
-      return response.status(isTimeout ? 504 : 502).json({
-        error: isTimeout
-          ? 'El servicio de datos tardó demasiado en responder.'
-          : 'Error interno al procesar la solicitud.',
+      const upstreamStatus = Number(error?.status);
+
+      if (upstreamStatus === 429) {
+        return response.status(429).json({
+          error:
+            'El servicio de IA alcanzó su límite de solicitudes o cuota. Inténtalo más tarde.',
+        });
+      }
+
+      if (upstreamStatus === 503) {
+        return response.status(503).json({
+          error:
+            'El servicio de IA no está disponible temporalmente. Inténtalo más tarde.',
+        });
+      }
+
+      return response.status(502).json({
+        error:
+          'No fue posible obtener una respuesta del asistente. Revisa los logs del backend de IA.',
       });
     }
   });

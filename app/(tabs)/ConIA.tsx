@@ -2,15 +2,15 @@ import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useState } from 'react';
 import {
-    ActivityIndicator,
-    Keyboard,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Keyboard,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 const getLocalApiHost = () => {
@@ -21,10 +21,20 @@ const getLocalApiHost = () => {
   return Constants.expoConfig?.hostUri?.split(':')[0] ?? 'localhost';
 };
 
-const API_BASE_URL =
+const POKEMON_API_BASE_URL =
+  __DEV__ && Platform.OS !== 'web'
+    ? `http://${getLocalApiHost()}:3000`
+    : 'https://pokeapi-zz36.onrender.com';
+
+const AI_API_BASE_URL =
   __DEV__ && Platform.OS !== 'web'
     ? `http://${getLocalApiHost()}:3001`
     : 'https://pokeapi-ia.onrender.com';
+
+type PokemonResponse = {
+  name?: string;
+  error?: string;
+};
 
 type AskResponse = {
   answer?: string;
@@ -43,21 +53,46 @@ function normalizePokemonName(value: string) {
 export default function ConIAScreen() {
   const [question, setQuestion] = useState('');
   const [pokemonName, setPokemonName] = useState('');
+  const [validatedPokemon, setValidatedPokemon] = useState('');
   const [answer, setAnswer] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const validatePokemon = async (cleanPokemonName: string) => {
+    const checkResponse = await fetch(
+      `${POKEMON_API_BASE_URL}/api/pokemon/${encodeURIComponent(cleanPokemonName)}`
+    );
+
+    const data = (await checkResponse.json().catch(() => null)) as
+      | PokemonResponse
+      | null;
+
+    if (checkResponse.status === 404) {
+      throw new Error(
+        'El Pokémon no existe en la base de datos de la aplicación.'
+      );
+    }
+
+    if (!checkResponse.ok) {
+      throw new Error(
+        data?.error ?? 'Error al validar el Pokémon en el servidor.'
+      );
+    }
+
+    return data?.name ?? cleanPokemonName;
+  };
 
   const askAI = async () => {
     const cleanQuestion = question.trim();
     const cleanPokemonName = normalizePokemonName(pokemonName);
 
-    if (!cleanQuestion) {
-      setError('Escribe una pregunta sobre Pokémon.');
+    if (!cleanPokemonName) {
+      setError('Escribe el nombre del Pokémon que quieres consultar.');
       return;
     }
 
-    if (!cleanPokemonName) {
-      setError('Escribe el nombre del Pokémon que quieres consultar.');
+    if (!cleanQuestion) {
+      setError('Escribe una pregunta sobre Pokémon.');
       return;
     }
 
@@ -67,16 +102,22 @@ export default function ConIAScreen() {
     setAnswer('');
 
     try {
-      const aiResponse = await fetch(`${API_BASE_URL}/api/ai/ask`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          question: cleanQuestion,
-          pokemonName: cleanPokemonName,
-        }),
-      });
+      // 1. Validar primero contra server.js / Supabase.
+      const validatedName = await validatePokemon(cleanPokemonName);
+
+      setValidatedPokemon(validatedName);
+
+      // 2. Solo si existe, consultar al servicio de IA.
+      const aiResponse = await fetch(`${AI_API_BASE_URL}/api/ai/ask`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    question: cleanQuestion,
+    pokemonName: validatedName,
+  }),
+});
 
       const data = (await aiResponse.json().catch(() => null)) as
         | AskResponse
@@ -92,6 +133,7 @@ export default function ConIAScreen() {
 
       setAnswer(data.answer);
     } catch (requestError) {
+      setValidatedPokemon('');
       setError(
         requestError instanceof Error
           ? requestError.message
@@ -117,8 +159,8 @@ export default function ConIAScreen() {
         <Text style={styles.title}>¿Qué quieres saber?</Text>
 
         <Text style={styles.subtitle}>
-          Escribe el Pokémon y tu pregunta. El backend validará si existe antes
-          de consultar a Gemini.
+          Primero se valida el Pokémon en la base de datos. Si existe, se envía
+          tu pregunta al asistente.
         </Text>
       </View>
 
@@ -127,7 +169,10 @@ export default function ConIAScreen() {
 
         <TextInput
           value={pokemonName}
-          onChangeText={setPokemonName}
+          onChangeText={(value) => {
+            setPokemonName(value);
+            setValidatedPokemon('');
+          }}
           style={styles.shortInput}
           placeholder="Ej.: pikachu"
           placeholderTextColor="#84928a"
@@ -171,6 +216,12 @@ export default function ConIAScreen() {
             </>
           )}
         </Pressable>
+
+        {!!validatedPokemon && (
+          <Text style={styles.validatedText}>
+            Pokémon validado: {validatedPokemon}
+          </Text>
+        )}
       </View>
 
       {!!error && (
@@ -291,6 +342,12 @@ const styles = StyleSheet.create({
   buttonPressed: { opacity: 0.85 },
   buttonDisabled: { opacity: 0.65 },
   buttonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  validatedText: {
+    color: '#18745b',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 10,
+  },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
