@@ -29,33 +29,35 @@ type AskResponse = {
   error?: string;
 };
 
-// Lista común para ayudar a extraer el nombre del Pokémon de la pregunta
-const COMMON_POKEMONS = [
-  'pikachu', 'charizard', 'bulbasaur', 'squirtle', 'mewtwo', 'mew', 'lucario', 
-  'gengar', 'snorlax', 'eevee', 'rayquaza', 'greninja', 'ditto', 'gardevoir'
-];
-
 export default function ConIAScreen() {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const extractPokemonName = (text: string): string | null => {
-    const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
-    for (const name of COMMON_POKEMONS) {
-      const regex = new RegExp(`\\b${name}\\b`, 'i');
-      if (regex.test(cleanText)) {
-        return name;
-      }
-    }
+  /**
+   * Extrae la posible palabra clave (nombre del Pokémon) de la pregunta.
+   * Toma la última palabra significativa o limpia conectores comunes.
+   */
+  const extractSearchTerm = (text: string): string => {
+    const clean = text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[¿?¡!,.]/g, '')
+      .trim();
 
-    const words = cleanText.replace(/[¿?¡!,.]/g, '').split(/\s+/);
-    const stopWords = ['el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'que', 'cual', 'es', 'tipo', 'sobre'];
-    const potentialNames = words.filter(w => w.length > 2 && !stopWords.includes(w));
+    const words = clean.split(/\s+/);
+    const stopWords = ['el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'que', 'cual', 'es', 'tipo', 'sobre', 'numero', 'color', 'caracteristicas'];
     
-    return potentialNames.length > 0 ? potentialNames[potentialNames.length - 1] : null;
+    // Filtramos palabras vacías
+    const filtered = words.filter(w => w.length > 2 && !stopWords.includes(w));
+    
+    // Devolvemos la última palabra útil (ej. "pikachu" de "color de pikachu") o la última palabra en general
+    if (filtered.length > 0) {
+      return filtered[filtered.length - 1];
+    }
+    return words[words.length - 1] ?? '';
   };
 
   const askAI = async () => {
@@ -71,30 +73,33 @@ export default function ConIAScreen() {
     setAnswer('');
 
     try {
-      // 1. Extraer el nombre del Pokémon de la pregunta
-      const pokemonName = extractPokemonName(cleanQuestion);
+      const searchTerm = extractSearchTerm(cleanQuestion);
 
-      if (!pokemonName) {
-        setError('No pudimos identificar un Pokémon en tu pregunta. Intenta escribir su nombre claramente.');
+      if (!searchTerm) {
+        setError('Escribe el nombre de un Pokémon válido en tu pregunta.');
         setLoading(false);
         return;
       }
 
-      // 2. Validar en tu servidor (Supabase) si el Pokémon realmente existe
-      const checkResponse = await fetch(`${API_BASE_URL}/api/pokemon/${encodeURIComponent(pokemonName)}`);
+      console.log(`Validando en BD el término: "${searchTerm}"`);
 
-      // Si el servidor responde 404 (No encontrado), aplicamos el ahorro y detenemos el flujo
+      // 1. Consultamos directamente al servicio backend en server.js (/api/pokemon/:name)
+      const checkResponse = await fetch(`${API_BASE_URL}/api/pokemon/${encodeURIComponent(searchTerm)}`);
+
+      // 2. Si la base de datos responde 404, el Pokémon no existe -> Ahorramos Gemini
       if (checkResponse.status === 404) {
         setError('no existe en la base de datos de la app. Ahorramos la consulta a Gemini.');
         setLoading(false);
         return;
       }
 
+      // Si ocurre otro error de servidor (ej. 500)
       if (!checkResponse.ok) {
-        throw new Error('Error al validar el Pokémon en el servidor.');
+        const errData = await checkResponse.json().catch(() => null);
+        throw new Error(errData?.error ?? 'Error al validar el Pokémon en el servidor.');
       }
 
-      // 3. SI SÍ EXISTE EN LA BASE DE DATOS, CONSULTAMOS A GEMINI
+      // 3. Si el Pokémon SÍ existe (status 200), procedemos a consultar a Gemini
       const aiResponse = await fetch(`${API_BASE_URL}/api/ai/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,7 +140,7 @@ export default function ConIAScreen() {
         <Text style={styles.eyebrow}>ASISTENTE DE LA APP</Text>
         <Text style={styles.title}>¿Qué quieres saber?</Text>
         <Text style={styles.subtitle}>
-          Pregunta sobre Pokémon existentes en la base de datos.
+          Validación directa con la base de datos de Supabase.
         </Text>
       </View>
 
@@ -145,7 +150,7 @@ export default function ConIAScreen() {
           value={question}
           onChangeText={setQuestion}
           style={styles.input}
-          placeholder="Ej.: ¿Qué tipo es pikachu?"
+          placeholder="Ej.: ¿Cuál es el número de pikachu?"
           placeholderTextColor="#84928a"
           multiline
           maxLength={500}

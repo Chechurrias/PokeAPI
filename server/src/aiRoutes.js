@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { Router } from 'express';
+import fetch from 'node-fetch'; // Asegúrate de tener node-fetch o usar fetch nativo de Node 18+
 
 export function createAiRouter() {
   const router = Router();
@@ -14,17 +15,48 @@ export function createAiRouter() {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    const rawModel = process.env.GEMINI_MODEL ?? 'gemini-3.8-flash';
+    const rawModel = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
 
     if (!apiKey) {
       return response.status(503).json({ error: 'El asistente no tiene configurada la clave en el servidor.' });
     }
 
     try {
+      // 1. EXTRAER EL POKÉMON DE LA PREGUNTA EN EL BACKEND
+      const cleanText = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[¿?¡!,.]/g, '');
+      const words = cleanText.split(/\s+/);
+      const stopWords = ['el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'que', 'cual', 'es', 'tipo', 'sobre', 'numero', 'color', 'caracteristicas'];
+      const filtered = words.filter(w => w.length > 2 && !stopWords.includes(w));
+      const pokemonName = filtered.length > 0 ? filtered[filtered.length - 1] : words[words.length - 1];
+
+      if (!pokemonName) {
+        return response.status(400).json({ error: 'No se pudo identificar un Pokémon en la pregunta.' });
+      }
+
+      // 2. CONSULTAR AL SERVICIO DE POKÉMON (ej. pokeapi-zz36.onrender.com)
+      const pokemonServiceUrl = `https://pokeapi-zz36.onrender.com/api/pokemon/${encodeURIComponent(pokemonName)}`;
+      console.log(`[AI SERVICE] Consultando servicio de Pokémon: ${pokemonServiceUrl}`);
+
+      const checkResponse = await fetch(pokemonServiceUrl);
+
+      // 3. SI NO EXISTE EN LA BASE DE DATOS, RETORNAMOS EL ERROR DE AHORRO Y NO LLAMAMOS A GEMINI
+      if (checkResponse.status === 404) {
+        console.log(`[AI SERVICE] El Pokémon "${pokemonName}" no existe. Ahorrando consulta a Gemini.`);
+        return response.status(404).json({
+          error: 'no existe en la base de datos de la app. Ahorramos la consulta a Gemini.'
+        });
+      }
+
+      if (!checkResponse.ok) {
+        return response.status(502).json({ error: 'Error al verificar el Pokémon en el servicio de datos.' });
+      }
+
+      console.log(`[AI SERVICE] Pokémon "${pokemonName}" encontrado en la BD. Procediendo a consultar a Gemini...`);
+
+      // 4. SI EXISTE, INVOCAMOS A GEMINI
       const gemini = new GoogleGenAI({ apiKey });
       const modelName = rawModel.replace(/^models\//, '');
 
-      // Consulta directa a Gemini
       const result = await gemini.models.generateContent({
         model: modelName,
         contents: question,
@@ -41,32 +73,8 @@ export function createAiRouter() {
         sources: [],
       });
     } catch (error) {
-      // Imprimimos el error crudo completo y la traza en la consola de Render para facilitar el diagnóstico
-      console.error('ERROR CRUDO DE GEMINI:', JSON.stringify(error, null, 2));
-      console.error('STACK TRACE:', error?.stack);
-
-      // Extracción segura sin usar 'any'
-      const err = (typeof error === 'object' && error !== null) ? error : {};
-      const statusCode = 'status' in err ? err.status : ('code' in err ? err.code : undefined);
-      const statusText = String(statusCode ?? '');
-      const errorMessage = error instanceof Error ? error.message : 'No se pudo obtener respuesta de Gemini.';
-
-      if (
-        statusCode === 400 ||
-        statusCode === 401 ||
-        statusCode === 403 ||
-        statusText.includes('UNAUTHENTICATED') ||
-        statusText.includes('PERMISSION_DENIED')
-      ) {
-        return response.status(503).json({ error: 'La clave de Gemini no es válida o no tiene acceso al modelo.' });
-      }
-
-      if (statusCode === 429 || statusText.includes('RESOURCE_EXHAUSTED')) {
-        return response.status(503).json({ error: 'Gemini está ocupado o se superó la cuota temporalmente.' });
-      }
-
-      // Devolvemos el mensaje de error exacto para mayor visibilidad en la app
-      return response.status(502).json({ error: errorMessage });
+      console.error('Error detallado en la ruta de IA:', error);
+      return response.status(502).json({ error: error instanceof Error ? error.message : 'Error interno al procesar la solicitud.' });
     }
   });
 
