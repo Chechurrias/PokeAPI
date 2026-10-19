@@ -1,10 +1,8 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import Constants from 'expo-constants';
 import { useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,23 +11,9 @@ import {
   View,
 } from 'react-native';
 
-const getLocalApiHost = () => {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    return window.location.hostname;
-  }
-
-  return Constants.expoConfig?.hostUri?.split(':')[0] ?? 'localhost';
-};
-
-const POKEMON_API_BASE_URL =
-  __DEV__ && Platform.OS !== 'web'
-    ? `http://${getLocalApiHost()}:3000`
-    : 'https://pokeapi-zz36.onrender.com';
-
-const AI_API_BASE_URL =
-  __DEV__ && Platform.OS !== 'web'
-    ? `http://${getLocalApiHost()}:3001`
-    : 'https://pokeapi-ia.onrender.com';
+// URLs públicas con HTTPS (compatibles al 100% con iOS y Android)
+const POKEMON_API_BASE_URL = 'https://pokeapi-zz36.onrender.com';
+const AI_API_BASE_URL = 'https://pokeapi-ia.onrender.com';
 
 type PokemonResponse = {
   name?: string;
@@ -59,27 +43,28 @@ export default function ConIAScreen() {
   const [loading, setLoading] = useState(false);
 
   const validatePokemon = async (cleanPokemonName: string) => {
-    const checkResponse = await fetch(
-      `${POKEMON_API_BASE_URL}/api/pokemon/${encodeURIComponent(cleanPokemonName)}`
-    );
-
-    const data = (await checkResponse.json().catch(() => null)) as
-      | PokemonResponse
-      | null;
-
-    if (checkResponse.status === 404) {
-      throw new Error(
-        'El Pokémon no existe en la base de datos de la aplicación.'
+    try {
+      const checkResponse = await fetch(
+        `${POKEMON_API_BASE_URL}/api/pokemon/${encodeURIComponent(cleanPokemonName)}`
       );
-    }
 
-    if (!checkResponse.ok) {
-      throw new Error(
-        data?.error ?? 'Error al validar el Pokémon en el servidor.'
-      );
-    }
+      const data = (await checkResponse.json().catch(() => null)) as PokemonResponse | null;
 
-    return data?.name ?? cleanPokemonName;
+      if (checkResponse.status === 404) {
+        throw new Error('El Pokémon no existe en la base de datos de la aplicación.');
+      }
+
+      if (!checkResponse.ok) {
+        throw new Error(data?.error ?? 'Error al validar el Pokémon en el servidor.');
+      }
+
+      return data?.name ?? cleanPokemonName;
+    } catch (err) {
+      if (err instanceof TypeError && err.message.includes('Network request failed')) {
+        throw new Error('No se pudo conectar con el servidor principal. El servidor en Render puede estar despertando (espera 30 segundos).');
+      }
+      throw err;
+    }
   };
 
   const askAI = async () => {
@@ -102,26 +87,23 @@ export default function ConIAScreen() {
     setAnswer('');
 
     try {
-      // 1. Validar primero contra server.js / Supabase.
+      // 1. Validar primero contra la base de datos
       const validatedName = await validatePokemon(cleanPokemonName);
-
       setValidatedPokemon(validatedName);
 
-      // 2. Solo si existe, consultar al servicio de IA.
+      // 2. Consultar al servicio de IA en Render
       const aiResponse = await fetch(`${AI_API_BASE_URL}/api/ai/ask`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    question: cleanQuestion,
-    pokemonName: validatedName,
-  }),
-});
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: cleanQuestion,
+          pokemonName: validatedName,
+        }),
+      });
 
-      const data = (await aiResponse.json().catch(() => null)) as
-        | AskResponse
-        | null;
+      const data = (await aiResponse.json().catch(() => null)) as AskResponse | null;
 
       if (!aiResponse.ok) {
         throw new Error(data?.error ?? 'No se pudo consultar el asistente.');
@@ -159,8 +141,7 @@ export default function ConIAScreen() {
         <Text style={styles.title}>¿Qué quieres saber?</Text>
 
         <Text style={styles.subtitle}>
-          Primero se valida el Pokémon en la base de datos. Si existe, se envía
-          tu pregunta al asistente.
+          Primero se valida el Pokémon en la base de datos. Si existe, se envía tu pregunta al asistente.
         </Text>
       </View>
 
