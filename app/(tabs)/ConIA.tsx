@@ -20,8 +20,7 @@ const getLocalApiHost = () => {
   return Constants.expoConfig?.hostUri?.split(':')[0] ?? 'localhost';
 };
 
-// Apunta a localhost en desarrollo local y a Render en producción o web
-const AI_API_URL = __DEV__ && Platform.OS !== 'web'
+const API_BASE_URL = __DEV__ && Platform.OS !== 'web'
   ? `http://${getLocalApiHost()}:3001`
   : 'https://pokeapi-ia.onrender.com';
 
@@ -30,20 +29,39 @@ type AskResponse = {
   error?: string;
 };
 
+// Lista común para ayudar a extraer el nombre del Pokémon de la pregunta
+const COMMON_POKEMONS = [
+  'pikachu', 'charizard', 'bulbasaur', 'squirtle', 'mewtwo', 'mew', 'lucario', 
+  'gengar', 'snorlax', 'eevee', 'rayquaza', 'greninja', 'ditto', 'gardevoir'
+];
+
 export default function ConIAScreen() {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const extractPokemonName = (text: string): string | null => {
+    const cleanText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    for (const name of COMMON_POKEMONS) {
+      const regex = new RegExp(`\\b${name}\\b`, 'i');
+      if (regex.test(cleanText)) {
+        return name;
+      }
+    }
+
+    const words = cleanText.replace(/[¿?¡!,.]/g, '').split(/\s+/);
+    const stopWords = ['el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'que', 'cual', 'es', 'tipo', 'sobre'];
+    const potentialNames = words.filter(w => w.length > 2 && !stopWords.includes(w));
+    
+    return potentialNames.length > 0 ? potentialNames[potentialNames.length - 1] : null;
+  };
+
   const askAI = async () => {
     const cleanQuestion = question.trim();
     if (!cleanQuestion) {
       setError('Escribe una pregunta sobre Pokémon.');
-      return;
-    }
-    if (!AI_API_URL) {
-      setError('El asistente no está configurado correctamente.');
       return;
     }
 
@@ -53,25 +71,51 @@ export default function ConIAScreen() {
     setAnswer('');
 
     try {
-      const response = await fetch(`${AI_API_URL}/api/ai/ask`, {
+      // 1. Extraer el nombre del Pokémon de la pregunta
+      const pokemonName = extractPokemonName(cleanQuestion);
+
+      if (!pokemonName) {
+        setError('No pudimos identificar un Pokémon en tu pregunta. Intenta escribir su nombre claramente.');
+        setLoading(false);
+        return;
+      }
+
+      // 2. Validar en tu servidor (Supabase) si el Pokémon realmente existe
+      const checkResponse = await fetch(`${API_BASE_URL}/api/pokemon/${encodeURIComponent(pokemonName)}`);
+
+      // Si el servidor responde 404 (No encontrado), aplicamos el ahorro y detenemos el flujo
+      if (checkResponse.status === 404) {
+        setError('no existe en la base de datos de la app. Ahorramos la consulta a Gemini.');
+        setLoading(false);
+        return;
+      }
+
+      if (!checkResponse.ok) {
+        throw new Error('Error al validar el Pokémon en el servidor.');
+      }
+
+      // 3. SI SÍ EXISTE EN LA BASE DE DATOS, CONSULTAMOS A GEMINI
+      const aiResponse = await fetch(`${API_BASE_URL}/api/ai/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: cleanQuestion }),
       });
-      const data = await response.json().catch(() => null) as AskResponse | null;
 
-      if (!response.ok) {
+      const data = await aiResponse.json().catch(() => null) as AskResponse | null;
+
+      if (!aiResponse.ok) {
         throw new Error(data?.error ?? 'No se pudo consultar el asistente.');
       }
       if (!data?.answer) {
         throw new Error('El servidor no devolvió una respuesta.');
       }
+
       setAnswer(data.answer);
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : 'Ocurrió un error al consultar el asistente.'
+          : 'Ocurrió un error al procesar tu solicitud.'
       );
     } finally {
       setLoading(false);
@@ -91,7 +135,7 @@ export default function ConIAScreen() {
         <Text style={styles.eyebrow}>ASISTENTE DE LA APP</Text>
         <Text style={styles.title}>¿Qué quieres saber?</Text>
         <Text style={styles.subtitle}>
-          Pregúntale directamente a Gemini cualquier curiosidad sobre Pokémon.
+          Pregunta sobre Pokémon existentes en la base de datos.
         </Text>
       </View>
 
@@ -101,13 +145,12 @@ export default function ConIAScreen() {
           value={question}
           onChangeText={setQuestion}
           style={styles.input}
-          placeholder="Ej.: ¿Cuál es el color de Pikachu y qué evoluciones tiene?"
+          placeholder="Ej.: ¿Qué tipo es pikachu?"
           placeholderTextColor="#84928a"
           multiline
           maxLength={500}
           textAlignVertical="top"
           editable={!loading}
-          accessibilityLabel="Escribe tu pregunta"
         />
         <Text style={styles.counter}>{question.length}/500</Text>
         <Pressable
