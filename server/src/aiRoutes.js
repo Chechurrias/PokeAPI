@@ -14,7 +14,7 @@ export function createAiRouter() {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    const rawModel = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
+    const rawModel = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
 
     if (!apiKey) {
       return response.status(503).json({ error: 'El asistente no tiene configurada la clave en el servidor.' });
