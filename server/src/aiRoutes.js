@@ -1,9 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { Router } from 'express';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
-
 export function createAiRouter() {
   const router = Router();
 
@@ -15,15 +12,19 @@ export function createAiRouter() {
     if (question.length > 500) {
       return response.status(400).json({ error: 'La pregunta no puede superar los 500 caracteres.' });
     }
-    if (!GEMINI_API_KEY) {
-      return response.status(503).json({ error: 'El asistente no está configurado en el servidor.' });
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    const rawModel = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
+
+    if (!apiKey) {
+      return response.status(503).json({ error: 'El asistente no tiene configurada la clave en el servidor.' });
     }
 
     try {
-      const gemini = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-      const modelName = GEMINI_MODEL.startsWith('models/') ? GEMINI_MODEL.replace('models/', '') : GEMINI_MODEL;
+      const gemini = new GoogleGenAI({ apiKey });
+      const modelName = rawModel.replace(/^models\//, '');
 
-      // Consulta directa a Gemini con un prompt de rol experto
+      // Consulta directa a Gemini
       const result = await gemini.models.generateContent({
         model: modelName,
         contents: question,
@@ -40,15 +41,32 @@ export function createAiRouter() {
         sources: [],
       });
     } catch (error) {
-      console.error('Error detallado al consultar Gemini:', error);
+      // Imprimimos el error crudo completo y la traza en la consola de Render para facilitar el diagnóstico
+      console.error('ERROR CRUDO DE GEMINI:', JSON.stringify(error, null, 2));
+      console.error('STACK TRACE:', error?.stack);
 
-      if (error?.status === 400 || error?.status === 401 || error?.status === 403) {
+      // Extracción segura sin usar 'any'
+      const err = (typeof error === 'object' && error !== null) ? error : {};
+      const statusCode = 'status' in err ? err.status : ('code' in err ? err.code : undefined);
+      const statusText = String(statusCode ?? '');
+      const errorMessage = error instanceof Error ? error.message : 'No se pudo obtener respuesta de Gemini.';
+
+      if (
+        statusCode === 400 ||
+        statusCode === 401 ||
+        statusCode === 403 ||
+        statusText.includes('UNAUTHENTICATED') ||
+        statusText.includes('PERMISSION_DENIED')
+      ) {
         return response.status(503).json({ error: 'La clave de Gemini no es válida o no tiene acceso al modelo.' });
       }
-      if (error?.status === 429) {
-        return response.status(503).json({ error: 'Gemini está ocupado temporalmente. Inténtalo de nuevo.' });
+
+      if (statusCode === 429 || statusText.includes('RESOURCE_EXHAUSTED')) {
+        return response.status(503).json({ error: 'Gemini está ocupado o se superó la cuota temporalmente.' });
       }
-      return response.status(502).json({ error: 'No se pudo obtener respuesta de Gemini.' });
+
+      // Devolvemos el mensaje de error exacto para mayor visibilidad en la app
+      return response.status(502).json({ error: errorMessage });
     }
   });
 
