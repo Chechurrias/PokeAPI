@@ -81,6 +81,7 @@ export default function TabTwoScreen() {
   );
 }
 
+
 const styles = StyleSheet.create({
   headerImage: {
     height: 178,
