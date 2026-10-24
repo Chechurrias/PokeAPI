@@ -32,12 +32,13 @@ app.use(express.json({ limit: '32kb' }));
 
 // --- PROMPT DEL SISTEMA ---
 const SYSTEM_INSTRUCTION = [
-  'Eres un asistente especializado en Pokémon y solo respondes preguntas relacionadas con ellos.',
+  'Eres un asistente especializado en Pokémon y solo puedes responder preguntas relacionadas con los pokémon.',
   'Responde en español de forma clara, directa y amable.',
   'El mensaje incluye un Pokémon seleccionado y una pregunta.',
   'Cuando la pregunta use pronombres como "él", "su", "es" o no repita el nombre, interpreta que se refiere al Pokémon seleccionado.',
   'No solicites nuevamente el nombre si ya está indicado.',
-  'Si desconoces un dato, dilo sin inventarlo.',
+  'Si desconoces un dato, dilo sin inventarlo. ',
+  'Solo puedes responder preguntas relacionadas UNICA Y EXCLUSIVAMENTE con los pokémon'
 ].join(' ');
 
 let geminiClient = null;
@@ -45,9 +46,9 @@ let geminiClient = null;
 // ==========================================
 // 1. CONTROLADOR GOOGLE GEMINI
 // ==========================================
-async function askGemini(fullPrompt) {
+async function askGemini(fullPrompt, timeoutMs) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
-  const modelName = (process.env.GEMINI_MODEL ?? 'gemini-3.8-flash').trim().replace(/^models\//, '');
+  const modelName = (process.env.GEMINI_MODEL ?? 'gemini-2.5-flash').trim().replace(/^models\//, '');
 
   if (!apiKey) {
     throw new Error('La clave de GEMINI no está configurada en el servidor.');
@@ -57,7 +58,8 @@ async function askGemini(fullPrompt) {
     geminiClient = new GoogleGenAI({ apiKey });
   }
 
-  const result = await geminiClient.models.generateContent({
+  // Simulamos un timeout con Promise.race ya que generateContent de @google/genai maneja fetch internamente
+  const geminiPromise = geminiClient.models.generateContent({
     model: modelName,
     contents: fullPrompt,
     config: {
@@ -66,15 +68,20 @@ async function askGemini(fullPrompt) {
     },
   });
 
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('AbortError')), timeoutMs)
+  );
+
+  const result = await Promise.race([geminiPromise, timeoutPromise]);
   return result.text?.trim() ?? '';
 }
 
 // ==========================================
-// 2. CONTROLADOR GROQ API (Llama 3.3 / Llama 3.1)
+// 2. CONTROLADOR GROQ API
 // ==========================================
-async function askGroq(fullPrompt) {
+async function askGroq(fullPrompt, timeoutMs, signal) {
   const apiKey = process.env.GROQ_API_KEY?.trim();
-  const modelName = (process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile').trim();
+  const modelName = (process.env.GROQ_MODEL ?? 'openai/gpt-oss-20b').trim();
 
   if (!apiKey) {
     throw new Error('La clave de GROQ no está configurada en el servidor.');
@@ -95,6 +102,7 @@ async function askGroq(fullPrompt) {
       max_tokens: 800,
       temperature: 0.7,
     }),
+    signal, // 👈 Se inyecta la señal del AbortController del timeout
   });
 
   const data = await response.json().catch(() => null);
@@ -107,11 +115,11 @@ async function askGroq(fullPrompt) {
 }
 
 // ==========================================
-// 3. CONTROLADOR OPENROUTER (DeepSeek / Gemma)
+// 3. CONTROLADOR OPENROUTER
 // ==========================================
-async function askOpenRouter(fullPrompt) {
+async function askOpenRouter(fullPrompt, timeoutMs, signal) {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  const modelName = (process.env.OPENROUTER_MODEL ?? 'deepseek/deepseek-chat:free').trim();
+  const modelName = (process.env.OPENROUTER_MODEL ?? 'openrouter/free').trim();
 
   if (!apiKey) {
     throw new Error('La clave de OPENROUTER no está configurada en el servidor.');
@@ -122,7 +130,7 @@ async function askOpenRouter(fullPrompt) {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://pokeapi-ia.onrender.com', // Recomendado por OpenRouter
+      'HTTP-Referer': 'https://pokeapi-ia.onrender.com',
       'X-Title': 'Pokedex AI Assistant',
     },
     body: JSON.stringify({
@@ -134,6 +142,7 @@ async function askOpenRouter(fullPrompt) {
       max_tokens: 800,
       temperature: 0.7,
     }),
+    signal, // 👈 Se inyecta la señal del AbortController del timeout
   });
 
   const data = await response.json().catch(() => null);
@@ -152,6 +161,10 @@ app.post('/api/ai/ask', async (request, response) => {
   const question = typeof request.body?.question === 'string' ? request.body.question.trim() : '';
   const pokemonName = typeof request.body?.pokemonName === 'string' ? request.body.pokemonName.trim() : '';
   const aiProvider = String(request.body?.aiProvider ?? 'GEMINI').toUpperCase().trim();
+  
+  // Recogemos el timeout enviado por el frontend (por defecto 30 segundos)
+  const timeoutSeconds = Number(request.body?.timeoutSeconds ?? 30);
+  const timeoutMs = timeoutSeconds * 1000;
 
   if (!question) {
     return response.status(400).json({ error: 'Escribe una pregunta.' });
@@ -169,29 +182,36 @@ app.post('/api/ai/ask', async (request, response) => {
     'Responde la pregunta tomando como referencia al Pokémon seleccionado.',
   ].join('\n');
 
-  console.log(`[IA] Solicitud recibida: ${aiProvider} para "${pokemonName}"`);
+  console.log(`[IA] Solicitud: ${aiProvider} para "${pokemonName}" (Timeout: ${timeoutSeconds}s)`);
+
+  // Configurar AbortController en el servidor para cortar la petición si excede el tiempo
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     let answer = '';
 
     switch (aiProvider) {
       case 'GEMINI':
-        answer = await askGemini(fullPrompt);
+        answer = await askGemini(fullPrompt, timeoutMs);
         break;
 
       case 'GROQ':
-        answer = await askGroq(fullPrompt);
+        answer = await askGroq(fullPrompt, timeoutMs, controller.signal);
         break;
 
       case 'OPENROUTER':
-        answer = await askOpenRouter(fullPrompt);
+        answer = await askOpenRouter(fullPrompt, timeoutMs, controller.signal);
         break;
 
       default:
+        clearTimeout(timeoutId);
         return response.status(400).json({
           error: `Proveedor no válido: ${aiProvider}. Opciones: GEMINI, GROQ, OPENROUTER.`,
         });
     }
+
+    clearTimeout(timeoutId);
 
     if (!answer) {
       return response.status(502).json({
@@ -205,7 +225,15 @@ app.post('/api/ai/ask', async (request, response) => {
       provider: aiProvider,
     });
   } catch (error) {
+    clearTimeout(timeoutId);
     console.error(`[IA] Error procesando con ${aiProvider}:`, error);
+
+    // Identificar si fue un error por exceder el tiempo límite
+    if (error.name === 'AbortError' || error.message === 'AbortError') {
+      return response.status(504).json({
+        error: `La solicitud excedió el tiempo de espera de ${timeoutSeconds} segundos configurado para ${aiProvider}.`,
+      });
+    }
 
     return response.status(502).json({
       error: error instanceof Error ? error.message : `Error al consultar ${aiProvider}.`,
